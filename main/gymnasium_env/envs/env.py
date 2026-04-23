@@ -1,10 +1,12 @@
-# Observation Space: road_id of the car(0 - 3), car_speed, agent_1_agent_road_id (0 - 3), relative_distance, relative_heading
+# Observation Space: road_id of the car(0 - 3), car_speed, agent_1_agent_road_id (0 - 3), agent_1_speed, relative_distance, relative_heading
 import gymnasium as gym
 from gymnasium import spaces
 import pygame
 import numpy as np
 
 dt = 0.2
+car_velocity = 25
+agent_1_velocity = 20
 
 class CarAndTargetEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 10}
@@ -37,21 +39,20 @@ class CarAndTargetEnv(gym.Env):
         self.car_length = 40
         self.car_width = 24
 
+        # car info
+        self.car = np.array([100,100, 0]) # x, y, heading
+        self.agent_1 = np.array([440,400, 0]) # x, y, heading
+        
+
         # speeds
-        self.car_speed = 20.0
-        self.agent_1_speed = 16.0
+        self.car_speed = car_velocity
+        self.agent_1_speed = agent_1_velocity
         self.max_speed = 30.0
         self.min_speed = 0.0
 
-        self.car_x = 0.0
-        self.car_road = 1
-
-        self.agent_1_x = 0.0
-        self.agent_1_road = 2
-
         # observation:
-        low = np.array([0, 0.0, 0, -np.inf], dtype=np.float32)
-        high = np.array([self.num_roads - 1, self.max_speed, self.num_roads - 1, np.inf], dtype=np.float32)
+        low = np.array([0, 0.0, 0, 0.0, 0.0, -np.pi], dtype=np.float32)
+        high = np.array([self.num_roads - 1, self.max_speed, self.num_roads - 1, self.max_speed, np.inf, np.pi], dtype=np.float32)
         self.observation_space = spaces.Box(low=low, high=high, dtype=np.float32)
 
         # actions:
@@ -63,35 +64,46 @@ class CarAndTargetEnv(gym.Env):
     def road_center_y(self, road_id):
         return self.road_top + (road_id + 0.5) * self.road_width
 
+    def y_to_road_id(self, y):
+        road_id = int((y - self.road_top) // self.road_width)
+        return int(np.clip(road_id, 0, self.num_roads - 1))
+
     def _get_obs(self):
-        rel_x = self.agent_1_x - self.car_x
-        rel_speed = self.agent_1_speed - self.car_speed
-        return np.array([
-            float(self.car_road),
-            float(self.car_speed),
-            float(self.agent_1_road),
-            float(rel_x),
-        ], dtype=np.float32)
+        car_road_id = self.y_to_road_id(self.car[1])
+        agent_1_road_id = self.y_to_road_id(self.agent_1[1])
+
+        dx = self.agent_1[0] - self.car[0]
+        dy = self.agent_1[1] - self.car[1]
+        rel_x = np.sqrt(dx**2+dy**2)
+        rel_angle = np.arctan2(dy, dx)
+        heading_error = rel_angle - self.car[2]
+        while heading_error > np.pi:
+            heading_error -= 2 * np.pi
+        while heading_error < -np.pi:
+            heading_error += 2 * np.pi
+        return np.array([car_road_id, self.car_speed, agent_1_road_id, self.agent_1_speed, rel_x, heading_error], dtype=np.float32)
 
     def _get_info(self):
         return {
-            "car_x": self.car_x,
-            "car_road": self.car_road,
-            "agent_1_x": self.agent_1_x,
-            "agent_1_road": self.agent_1_road
+            "car_x": self.car[0],
+            "car_road": self.y_to_road_id(self.car[1]),
+            "agent_1_x": self.agent_1[0],
+            "agent_1_road": self.y_to_road_id(self.agent_1[1])
         }
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         self.step_count = 0
 
-        self.car_x = 100.0
-        self.car_road = 1
-        self.car_speed = 50.0
+        self.car[0] = 100.0
+        self.car[1] = self.road_center_y(1)
+        self.car[2] = 0.0
+        self.car_speed = car_velocity
 
-        self.agent_1_x = 140.0
-        self.agent_1_road = 2
-        self.agent_1_speed = 52.0
+        self.agent_1[0] = 440.0
+        self.agent_1[1] = self.road_center_y(2)
+        self.agent_1[2] = 0.0
+        self.agent_1_speed = agent_1_velocity
 
         if self.render_mode == "human":
             self._render_frame()
@@ -108,12 +120,11 @@ class CarAndTargetEnv(gym.Env):
             self.car_speed = max(self.min_speed, self.car_speed - 2.0)
 
         # move vehicles forward
-        self.car_x += self.car_speed * dt
-        self.agent_1_x += self.agent_1_speed * dt
+        self.car[0] += self.car_speed * dt
+        self.agent_1[0] += self.agent_1_speed * dt
 
-        # simple termination/truncation
         truncated = self.step_count >= self.max_episode_steps
-        terminated = False
+        terminated = False # for now
 
         # placeholder reward for now
         reward = 0.0
@@ -125,11 +136,11 @@ class CarAndTargetEnv(gym.Env):
 
     # AI generated for rendering code
     def world_to_screen_x(self, world_x):
-        return int(world_x - self.car_x + self.camera_x)
+        return int(world_x - self.car[0] + self.camera_x)
 
-    def draw_vehicle(self, canvas, x, road_id, color):
+    def draw_vehicle(self, canvas, x, y, color):
         screen_x = self.world_to_screen_x(x)
-        screen_y = int(self.road_center_y(road_id))
+        screen_y = int(y)
 
         rect = pygame.Rect(
             screen_x - self.car_length // 2,
@@ -152,7 +163,7 @@ class CarAndTargetEnv(gym.Env):
         dash_spacing = 80
         dash_length = 30
 
-        world_left = self.car_x - self.camera_x
+        world_left = self.car[0] - self.camera_x
         world_right = world_left + self.window_width
 
         start_dash = int(np.floor(world_left / dash_spacing) * dash_spacing)
@@ -179,9 +190,9 @@ class CarAndTargetEnv(gym.Env):
         self.draw_road(canvas)
 
         # car and agent_1 car
-        self.draw_vehicle(canvas, self.car_x, self.car_road, (50, 150, 255))
-        self.draw_vehicle(canvas, self.agent_1_x, self.agent_1_road, (20, 20, 20))
-
+        self.draw_vehicle(canvas, self.car[0], self.car[1], (50, 150, 255))
+        self.draw_vehicle(canvas, self.agent_1[0], self.agent_1[1], (20, 20, 20))
+    
         if self.render_mode == "human":
             self.window.blit(canvas, canvas.get_rect())
             pygame.event.pump()
@@ -193,8 +204,10 @@ class CarAndTargetEnv(gym.Env):
     def render(self):
         if self.render_mode == "rgb_array":
             return self._render_frame()
-
+            
     def close(self):
         if self.window is not None:
             pygame.display.quit()
             pygame.quit()
+            self.window = None
+            self.clock = None
