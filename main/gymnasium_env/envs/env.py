@@ -1,4 +1,3 @@
-# Observation Space: road_id of the car(0 - 3), car_speed, agent_1_agent_road_id (0 - 3), agent_1_speed, relative_distance, relative_heading
 import gymnasium as gym
 from gymnasium import spaces
 import pygame
@@ -40,8 +39,8 @@ class CarAndTargetEnv(gym.Env):
         self.car_width = 24
 
         # car info
-        self.car = np.array([100,100, 0]) # x, y, heading
-        self.agent_1 = np.array([440,400, 0]) # x, y, heading
+        self.car = np.array([100.0, 100.0, 0.0], dtype=np.float32)
+        self.agent_1 = np.array([440.0, 400.0, np.pi], dtype=np.float32)
         
 
         # speeds
@@ -52,16 +51,19 @@ class CarAndTargetEnv(gym.Env):
         self.omega = 1.0
 
         # observation:
-        low = np.array([0, 0.0, 0, 0.0, 0.0, -np.pi], dtype=np.float32)
-        high = np.array([self.num_roads - 1, self.max_speed, self.num_roads - 1, self.max_speed, np.inf, np.pi], dtype=np.float32)
+        low = np.array([0, 0.0, -np.pi, 0, 0.0, -np.pi, 0.0, -np.pi], dtype=np.float32)
+        high = np.array([self.num_roads - 1, self.max_speed, np.pi, self.num_roads - 1, self.max_speed, np.pi, np.inf, np.pi], dtype=np.float32)
         self.observation_space = spaces.Box(low=low, high=high, dtype=np.float32)
 
         # actions:
-        # 1 accelerate
-        # 2 decelerate
-        # 3 turn left
-        # 4 turn right
-        self.action_space = spaces.Discrete(4)
+        # 0 forward
+        # 1 turn left
+        # 2 turn right
+        # 3 accelerate
+        # 4 decelerate
+        # 5 hard accelerate
+        # 6 hard brake
+        self.action_space = spaces.Discrete(7)
 
     #helper function to get the y coordinate of the center of a road given its id
     def road_center_y(self, road_id):
@@ -99,13 +101,13 @@ class CarAndTargetEnv(gym.Env):
         self.step_count = 0
 
         self.car[0] = 100.0
-        self.car[1] = self.road_center_y(1)
+        self.car[1] = self.road_center_y(2)
         self.car[2] = 0.0
         self.car_speed = car_velocity
 
-        self.agent_1[0] = 440.0
-        self.agent_1[1] = self.road_center_y(2)
-        self.agent_1[2] = 0.0
+        self.agent_1[0] = 940.0
+        self.agent_1[1] = self.road_center_y(1)
+        self.agent_1[2] = np.pi
         self.agent_1_speed = agent_1_velocity
 
         if self.render_mode == "human":
@@ -116,20 +118,27 @@ class CarAndTargetEnv(gym.Env):
     def step(self, action):
         self.step_count += 1
 
-        # update car position
-        alpha = self.car[2] 
-        speed = self.car_speed
+        alpha = self.car[2]
+        speed = self.car_speed   # base speed for this step
 
         if action == 1: # turn left 
-            alpha += dt * self.omega
-            speed = self.car_speed * 0.6
-        elif action == 2: # turn right
             alpha -= dt * self.omega
             speed = self.car_speed * 0.6
+        elif action == 2: # turn right visually
+            alpha += dt * self.omega
+            speed = self.car_speed * 0.6 
         elif action == 3: # accelerate
             self.car_speed = min(self.max_speed, self.car_speed + 2.0)
+            speed = self.car_speed
         elif action == 4: # decelerate
             self.car_speed = max(self.min_speed, self.car_speed - 2.0)
+            speed = self.car_speed
+        elif action == 5: # hard accelerate
+            self.car_speed = min(self.max_speed, self.car_speed + 10.0)
+            speed = self.car_speed
+        elif action == 6: # hard brake
+            self.car_speed = max(self.min_speed, self.car_speed - 10.0)
+            speed = self.car_speed
 
         if alpha > np.pi:
             alpha -= 2*np.pi
@@ -142,11 +151,10 @@ class CarAndTargetEnv(gym.Env):
         self.car[2] = alpha
 
         # update agent_1 position
-        self.agent_1[0] += agent_1_velocity * dt
-        self.agent_1[1] += agent_1_velocity * dt
-                    
-
-
+        self.agent_1[0] += self.agent_1_speed * dt * np.cos(self.agent_1[2])
+        self.agent_1[1] += self.agent_1_speed * dt * np.sin(self.agent_1[2])
+        self.respawn_agent_if_offscreen()
+        
         truncated = self.step_count >= self.max_episode_steps
         terminated = False # for now
 
@@ -158,30 +166,76 @@ class CarAndTargetEnv(gym.Env):
 
         return self._get_obs(), reward, terminated, truncated, self._get_info()
 
+    def respawn_agent_if_offscreen(self):
+        agent_screen_x = self.world_to_screen_x(self.agent_1[0])
+
+        if agent_screen_x < -self.car_length:
+            self.agent_1[0] = self.car[0] + (self.window_width - self.camera_x) + 100
+            self.agent_1[1] = self.road_center_y(1)
+            self.agent_1[2] = np.pi
+            self.agent_1_speed = agent_1_velocity
+            
     # AI generated for rendering code
     def world_to_screen_x(self, world_x):
         return int(world_x - self.car[0] + self.camera_x)
 
-    def draw_vehicle(self, canvas, x, y, color):
+    def draw_vehicle(self, canvas, x, y, heading, color):
         screen_x = self.world_to_screen_x(x)
         screen_y = int(y)
 
-        rect = pygame.Rect(
-            screen_x - self.car_length // 2,
-            screen_y - self.car_width // 2,
-            self.car_length,
-            self.car_width
+        # Create a small car surface
+        car_surface = pygame.Surface((self.car_length, self.car_width), pygame.SRCALPHA)
+
+        # Car body
+        pygame.draw.rect(
+            car_surface,
+            color,
+            pygame.Rect(0, 0, self.car_length, self.car_width),
+            border_radius=6
         )
-        pygame.draw.rect(canvas, color, rect, border_radius=6)
+
+        # Windshield near the front of the car
+        windshield_rect = pygame.Rect(
+            self.car_length - 16,   # near the front
+            4,                      # a little down from the top
+            10,                     # windshield width
+            self.car_width - 8      # windshield height
+        )
+        pygame.draw.rect(
+            car_surface,
+            (180, 220, 255),        # light blue
+            windshield_rect,
+            border_radius=3
+        )
+
+        pygame.draw.rect(
+            car_surface,
+            (120, 160, 200),
+            windshield_rect,
+            width=1,
+            border_radius=3
+        )
+
+        # Rotate according to heading
+        angle_degrees = -np.degrees(heading)
+        rotated_surface = pygame.transform.rotate(car_surface, angle_degrees)
+        rotated_rect = rotated_surface.get_rect(center=(screen_x, screen_y))
+
+        canvas.blit(rotated_surface, rotated_rect)
 
     def draw_road(self, canvas):
         road_rect = pygame.Rect(0, self.road_top, self.window_width, self.num_roads * self.road_width)
         pygame.draw.rect(canvas, (70, 70, 70), road_rect)
 
-        # solid road boundary lines
+        # solid road boundary / lane lines
         for i in range(self.num_roads + 1):
             y = self.road_top + i * self.road_width
-            pygame.draw.line(canvas, (255, 255, 255), (0, y), (self.window_width, y), 2)
+
+            # center divider between opposite directions
+            if i == self.num_roads // 2:
+                pygame.draw.line(canvas, (255, 220, 0), (0, y), (self.window_width, y), 4)
+            else:
+                pygame.draw.line(canvas, (255, 255, 255), (0, y), (self.window_width, y), 2)
 
         # dashed line on the road center
         dash_spacing = 80
@@ -214,8 +268,8 @@ class CarAndTargetEnv(gym.Env):
         self.draw_road(canvas)
 
         # car and agent_1 car
-        self.draw_vehicle(canvas, self.car[0], self.car[1], (50, 150, 255))
-        self.draw_vehicle(canvas, self.agent_1[0], self.agent_1[1], (20, 20, 20))
+        self.draw_vehicle(canvas, self.car[0], self.car[1], self.car[2], (50, 150, 255))
+        self.draw_vehicle(canvas, self.agent_1[0], self.agent_1[1], self.agent_1[2], (20, 20, 20))
     
         if self.render_mode == "human":
             self.window.blit(canvas, canvas.get_rect())
