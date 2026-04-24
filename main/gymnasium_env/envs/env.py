@@ -6,7 +6,7 @@ import numpy as np
 
 dt = 0.2
 car_velocity = 25
-agent_1_velocity = 20
+agent_1_velocity = 50
 
 class CarAndTargetEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 10}
@@ -47,8 +47,9 @@ class CarAndTargetEnv(gym.Env):
         # speeds
         self.car_speed = car_velocity
         self.agent_1_speed = agent_1_velocity
-        self.max_speed = 30.0
+        self.max_speed = 50.0
         self.min_speed = 0.0
+        self.omega = 1.0
 
         # observation:
         low = np.array([0, 0.0, 0, 0.0, 0.0, -np.pi], dtype=np.float32)
@@ -56,9 +57,11 @@ class CarAndTargetEnv(gym.Env):
         self.observation_space = spaces.Box(low=low, high=high, dtype=np.float32)
 
         # actions:
-        # 0 accelerate
-        # 1 decelerate
-        self.action_space = spaces.Discrete(2)
+        # 1 accelerate
+        # 2 decelerate
+        # 3 turn left
+        # 4 turn right
+        self.action_space = spaces.Discrete(4)
 
     #helper function to get the y coordinate of the center of a road given its id
     def road_center_y(self, road_id):
@@ -74,14 +77,14 @@ class CarAndTargetEnv(gym.Env):
 
         dx = self.agent_1[0] - self.car[0]
         dy = self.agent_1[1] - self.car[1]
-        rel_x = np.sqrt(dx**2+dy**2)
+        rel_dist = np.sqrt(dx**2+dy**2)
         rel_angle = np.arctan2(dy, dx)
         heading_error = rel_angle - self.car[2]
         while heading_error > np.pi:
             heading_error -= 2 * np.pi
         while heading_error < -np.pi:
             heading_error += 2 * np.pi
-        return np.array([car_road_id, self.car_speed, agent_1_road_id, self.agent_1_speed, rel_x, heading_error], dtype=np.float32)
+        return np.array([car_road_id, self.car_speed, self.car[2], agent_1_road_id, self.agent_1_speed, self.agent_1[2], rel_dist, heading_error], dtype=np.float32)
 
     def _get_info(self):
         return {
@@ -113,15 +116,36 @@ class CarAndTargetEnv(gym.Env):
     def step(self, action):
         self.step_count += 1
 
-        # car action
-        if action == 0: # accelerate
+        # update car position
+        alpha = self.car[2] 
+        speed = self.car_speed
+
+        if action == 1: # turn left 
+            alpha += dt * self.omega
+            speed = self.car_speed * 0.6
+        elif action == 2: # turn right
+            alpha -= dt * self.omega
+            speed = self.car_speed * 0.6
+        elif action == 3: # accelerate
             self.car_speed = min(self.max_speed, self.car_speed + 2.0)
-        elif action == 1: # decelerate
+        elif action == 4: # decelerate
             self.car_speed = max(self.min_speed, self.car_speed - 2.0)
 
-        # move vehicles forward
-        self.car[0] += self.car_speed * dt
-        self.agent_1[0] += self.agent_1_speed * dt
+        if alpha > np.pi:
+            alpha -= 2*np.pi
+        if alpha < -np.pi:
+            alpha += 2*np.pi
+        
+        # move forward
+        self.car[0] += dt * speed * np.cos(alpha)
+        self.car[1] += dt * speed * np.sin(alpha)
+        self.car[2] = alpha
+
+        # update agent_1 position
+        self.agent_1[0] += agent_1_velocity * dt
+        self.agent_1[1] += agent_1_velocity * dt
+                    
+
 
         truncated = self.step_count >= self.max_episode_steps
         terminated = False # for now
