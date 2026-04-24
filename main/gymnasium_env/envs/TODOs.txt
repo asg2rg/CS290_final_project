@@ -1,0 +1,9 @@
+1. env action range: clip just beyond legal action magnitude; penalize for illegal actions
+2. reward function: tbd
+3. TD3 goodies
+4. termination condition
+5. (V) collision checks
+
+NOTES:
+observations: target speed, car road id, car speed, car heading, agent_1 road id, agent_1 speed, agent_1 heading, relative distance, rel to agent
+action: discrete 2 outputs: left/right turn amount, accel/deccel amount

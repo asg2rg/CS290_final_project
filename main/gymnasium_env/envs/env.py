@@ -37,39 +37,50 @@ class CarAndTargetEnv(gym.Env):
         # car geometry
         self.car_length = 40
         self.car_width = 24
+        self.collision_margin = 1.5
 
         # car info
         self.car = np.array([100.0, 100.0, 0.0], dtype=np.float32)
         self.agent_1 = np.array([440.0, 400.0, np.pi], dtype=np.float32)
-        
 
         # speeds
         self.car_speed = car_velocity
         self.agent_1_speed = agent_1_velocity
-        self.max_speed = 50.0
+        self.max_speed = 100.0
         self.min_speed = 0.0
         self.omega = 1.0
 
         # observation:
-        low = np.array([0, 0.0, -np.pi, 0, 0.0, -np.pi, 0.0, -np.pi], dtype=np.float32)
+        low = np.array([-1, 0.0, -np.pi, -1, 0.0, -np.pi, 0.0, -np.pi], dtype=np.float32)
         high = np.array([self.num_roads - 1, self.max_speed, np.pi, self.num_roads - 1, self.max_speed, np.pi, np.inf, np.pi], dtype=np.float32)
         self.observation_space = spaces.Box(low=low, high=high, dtype=np.float32)
 
-        # actions:
-        # 0 forward
-        # 1 turn left
-        # 2 turn right
-        # 3 accelerate
-        # 4 decelerate
-        # 5 hard accelerate
-        # 6 hard brake
-        self.action_space = spaces.Discrete(7)
+        # turn_cmd:
+        # 0 slight left: -1.0
+        # 1 med left: -2.0
+        # 2 hard left: -4.0
+        # 3 no turn
+        # 4 slight right: 1.0
+        # 5 med right: 2.0
+        # 6 hard right: 4.0
+
+        # acc_cmd:
+        # 0 slight accel: 2.0
+        # 1 med accel: 5.0
+        # 2 hard accel: 10.0
+        # 3 no accel: 0.0
+        # 4 slight brake: -2.0
+        # 5 med brake: -5.0
+        # 6 hard brake: -10.0
+        self.action_space = spaces.MultiDiscrete([7, 7]) # turn_cmd, acc_cmd
 
     #helper function to get the y coordinate of the center of a road given its id
     def road_center_y(self, road_id):
         return self.road_top + (road_id + 0.5) * self.road_width
 
     def y_to_road_id(self, y):
+        if y < self.road_top or y > self.road_bottom:
+            return -1
         road_id = int((y - self.road_top) // self.road_width)
         return int(np.clip(road_id, 0, self.num_roads - 1))
 
@@ -115,30 +126,122 @@ class CarAndTargetEnv(gym.Env):
 
         return self._get_obs(), self._get_info()
 
+    def termin_check(self):
+        # collision
+        if self.collision_check():
+            print("Collision")
+            return True
+        # terminate when the car is >20 units into the green area
+        if self.car[1] < self.road_top - 20.0:
+            print("Too high")
+            return True
+        if self.car[1] > self.road_bottom + 20.0:
+            print("Too low")
+            return True
+        return False
+    
+    def collision_check(self):
+        x_zone = (self.car_length/2) + self.collision_margin
+        y_zone = (self.car_width/2) + self.collision_margin
+        # simple collision check
+        car_x = self.car[0]
+        car_y = self.car[1]
+        car_yaw = self.car[2]
+        car_corners = np.array([
+            self.rotate_point(x_zone, -y_zone, car_yaw),
+            self.rotate_point(x_zone, y_zone, car_yaw),
+            self.rotate_point(-x_zone, y_zone, car_yaw),
+            self.rotate_point(-x_zone, -y_zone, car_yaw)
+        ]) + np.array([car_x, car_y])
+
+        agent_1_x = self.agent_1[0]
+        agent_1_y = self.agent_1[1]
+        agent_1_yaw = self.agent_1[2]
+        agent_1_corners = np.array([
+            self.rotate_point(x_zone, -y_zone, agent_1_yaw),
+            self.rotate_point(x_zone, y_zone, agent_1_yaw),
+            self.rotate_point(-x_zone, y_zone, agent_1_yaw),
+            self.rotate_point(-x_zone, -y_zone, agent_1_yaw)
+        ]) + np.array([agent_1_x, agent_1_y])
+
+        return self.point_in_rectangle(car_corners, agent_1_corners) or self.point_in_rectangle(agent_1_corners, car_corners)
+
+    #### Copilot-generated separating axis theorem check ####
+    def rectangle_axes(self, corners):
+        axes = []
+        for i in range(len(corners)):
+            p1 = corners[i]
+            p2 = corners[(i + 1) % len(corners)]
+
+            # A separating axis is the outward normal of an edge.
+            # For a rectangle, testing the 4 edge normals is enough.
+            edge = p2 - p1
+            axis = np.array([-edge[1], edge[0]], dtype=np.float32)
+            norm = np.linalg.norm(axis)
+            if norm > 0:
+                axes.append(axis / norm)
+
+        return axes
+
+    def project_onto_axis(self, corners, axis):
+        # Projection collapses the polygon onto a 1D line.
+        # If the 1D intervals do not overlap on any axis, the rectangles do not collide.
+        projections = np.dot(corners, axis)
+        return np.min(projections), np.max(projections)
+
+    def point_in_rectangle(self, corners1, corners2):
+        # corners in clockwise order, check rotated rectangle collision
+        for axis in self.rectangle_axes(corners1) + self.rectangle_axes(corners2):
+            min1, max1 = self.project_onto_axis(corners1, axis)
+            min2, max2 = self.project_onto_axis(corners2, axis)
+
+            # A gap on any separating axis means the rectangles do not overlap.
+            if max1 < min2 or max2 < min1:
+                return False
+        return True
+    #### I hate math ####
+    
+    def rotate_point(self, x, y, angle):
+        cos_angle = np.cos(angle)
+        sin_angle = np.sin(angle)
+        x_rot = x * cos_angle - y * sin_angle
+        y_rot = x * sin_angle + y * cos_angle
+        return x_rot, y_rot
+    
+    def parse_cmds(self, turn, acc):
+        turn_cmds = {
+            0: -1.0, # slight left
+            1: -2.0, # med left
+            2: -3.0, # hard left
+            3: 0.0,  # no turn
+            4: 1.0,  # slight right
+            5: 2.0,  # med right
+            6: 3.0   # hard right
+        }
+        acc_cmds = {
+            0: 2.0,   # slight accel
+            1: 5.0,   # med accel
+            2: 10.0,  # hard accel
+            3: 0.0,   # no accel
+            4: -2.0,  # slight brake
+            5: -5.0,  # med brake
+            6: -10.0   # hard brake
+        }
+        return turn_cmds[turn], acc_cmds[acc] # omega, spd
+
     def step(self, action):
         self.step_count += 1
 
         alpha = self.car[2]
         speed = self.car_speed   # base speed for this step
 
-        if action == 1: # turn left 
-            alpha -= dt * self.omega
-            speed = self.car_speed * 0.6
-        elif action == 2: # turn right visually
-            alpha += dt * self.omega
-            speed = self.car_speed * 0.6 
-        elif action == 3: # accelerate
-            self.car_speed = min(self.max_speed, self.car_speed + 2.0)
-            speed = self.car_speed
-        elif action == 4: # decelerate
-            self.car_speed = max(self.min_speed, self.car_speed - 2.0)
-            speed = self.car_speed
-        elif action == 5: # hard accelerate
-            self.car_speed = min(self.max_speed, self.car_speed + 10.0)
-            speed = self.car_speed
-        elif action == 6: # hard brake
-            self.car_speed = max(self.min_speed, self.car_speed - 10.0)
-            speed = self.car_speed
+        turn_cmd = action[0]
+        acc_cmd = action[1]
+
+        turn_delta, acc_delta = self.parse_cmds(turn_cmd, acc_cmd)
+        alpha += dt * turn_delta * self.omega
+        spd = np.clip(speed + acc_delta, self.min_speed, self.max_speed)
+        self.car_speed = spd
 
         if alpha > np.pi:
             alpha -= 2*np.pi
@@ -156,7 +259,7 @@ class CarAndTargetEnv(gym.Env):
         self.respawn_agent_if_offscreen()
         
         truncated = self.step_count >= self.max_episode_steps
-        terminated = False # for now
+        terminated = self.termin_check()
 
         # placeholder reward for now
         reward = 0.0
