@@ -1,5 +1,6 @@
 from gymnasium_env.envs.env import CarAndTargetEnv
 import time
+import utils.configs as configs
 
 env = CarAndTargetEnv(render_mode="human", max_episode_steps=1000)
 obs, info = env.reset()
