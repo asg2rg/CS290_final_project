@@ -43,6 +43,7 @@ class TD3Agent:
         self.tau = 0.005
         self.noise_std = 0.2
         self.noise_clip = 0.5
+        self.grad_clip = 5.0
 
         self.epsilon = configs.EPS_START
         self.epsilon_min = configs.EPS_MIN
@@ -133,10 +134,12 @@ class TD3Agent:
 
         self.critic_1_optimizer.zero_grad()
         critic_1_loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.critic_1.parameters(), self.grad_clip)
         self.critic_1_optimizer.step()
 
         self.critic_2_optimizer.zero_grad()
         critic_2_loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.critic_2.parameters(), self.grad_clip)
         self.critic_2_optimizer.step()
 
         # delayed policy updates
@@ -146,6 +149,7 @@ class TD3Agent:
 
             self.actor_optimizer.zero_grad()
             actor_loss.backward()
+            torch.nn.utils.clip_grad_norm_(self.actor.parameters(), self.grad_clip)
             self.actor_optimizer.step()
 
             # update target networks
