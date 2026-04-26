@@ -3,14 +3,18 @@ from gymnasium import spaces
 import pygame
 import numpy as np
 
-dt = 0.2
-car_velocity = 25
-agent_1_velocity = 50
+import utils.configs as configs
+
+dt = configs.TIMESTEP
+car_velocity = configs.CAR_INITIAL_VEL
+agent_1_velocity = configs.AGENT_1_INITIAL_VEL
+
+MIN_RWD = -100.0
 
 class CarAndTargetEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 10}
 
-    def __init__(self, render_mode=None, max_episode_steps=200):
+    def __init__(self, render_mode=None, max_episode_steps=500):
         super().__init__()
 
         self.render_mode = render_mode
@@ -19,61 +23,46 @@ class CarAndTargetEnv(gym.Env):
 
         # initialization
         # define the size of the screen
-        self.window_width = 1200
-        self.window_height = 500
+        self.window_width = configs.WINDOW_W
+        self.window_height = configs.WINDOW_H
         self.window = None
         self.clock = None
 
         # define the road
-        self.num_roads = 4
-        self.road_width = 80
-        self.road_length = 5000
-        self.road_top = 90
+        self.num_roads = configs.ROAD_CNT
+        self.road_width = configs.ROAD_W
+        self.road_length = configs.ROAD_L
+        self.road_top = configs.ROAD_TOP
         self.road_bottom = self.road_top + self.num_roads * self.road_width
 
         # keep camera on the car and near left-center 
-        self.camera_x = 250
+        self.camera_x = configs.CAM_X
 
         # car geometry
-        self.car_length = 40
-        self.car_width = 24
+        self.car_length = configs.CAR_L
+        self.car_width = configs.CAR_W
         self.collision_margin = 1.5
 
         # car info
-        self.car = np.array([100.0, 100.0, 0.0], dtype=np.float32)
+        self.car = np.array([100.0, 100.0, 0.0], dtype=np.float32) # car init x at 100
         self.agent_1 = np.array([440.0, 400.0, np.pi], dtype=np.float32)
 
         # speeds
         self.car_speed = car_velocity
         self.agent_1_speed = agent_1_velocity
-        self.max_speed = 100.0
-        self.min_speed = 0.0
-        self.omega = 1.0
+        self.max_speed = configs.MAX_SPEED
+        self.min_speed = configs.MIN_SPEED
+        self.omega = configs.TURN_UNIT
 
         # observation:
         low = np.array([-1, 0.0, -np.pi, -1, 0.0, -np.pi, 0.0, -np.pi], dtype=np.float32)
         high = np.array([self.num_roads - 1, self.max_speed, np.pi, self.num_roads - 1, self.max_speed, np.pi, np.inf, np.pi], dtype=np.float32)
         self.observation_space = spaces.Box(low=low, high=high, dtype=np.float32)
 
-        # turn_cmd:
-        # 0 slight left: -1.0
-        # 1 med left: -2.0
-        # 2 hard left: -4.0
-        # 3 no turn
-        # 4 slight right: 1.0
-        # 5 med right: 2.0
-        # 6 hard right: 4.0
-
-        # acc_cmd:
-        # 0 slight accel: 2.0
-        # 1 med accel: 5.0
-        # 2 hard accel: 10.0
-        # 3 no accel: 0.0
-        # 4 slight brake: -2.0
-        # 5 med brake: -5.0
-        # 6 hard brake: -10.0
-        self.action_space = spaces.MultiDiscrete([7, 7]) # turn_cmd, acc_cmd
-
+        if configs.DISCRETE:
+            self.action_space = spaces.MultiDiscrete([configs.TURN_SHAPE, configs.ACC_SHAPE]) # turn_cmd, acc_cmd
+        else:
+            self.action_space = spaces.Box(low=np.array([-configs.MAX_ANG, -configs.MAX_ACC]), high=np.array([configs.MAX_ANG, configs.MAX_ACC]), shape=(2,), dtype=np.float32) # turn_cmd, acc_cmd
     #helper function to get the y coordinate of the center of a road given its id
     def road_center_y(self, road_id):
         return self.road_top + (road_id + 0.5) * self.road_width
@@ -110,6 +99,7 @@ class CarAndTargetEnv(gym.Env):
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         self.step_count = 0
+        self.eps_reward = 0.0
 
         self.car[0] = 100.0
         self.car[1] = self.road_center_y(2)
@@ -126,17 +116,65 @@ class CarAndTargetEnv(gym.Env):
 
         return self._get_obs(), self._get_info()
 
-    def termin_check(self):
-        # collision
+    def reward_calc(self):
+        reward = 0.0
+        # collision penalty
         if self.collision_check():
-            print("Collision")
-            return True
-        # terminate when the car is >20 units into the green area
+            col_rwd = -10.0
+            reward += col_rwd
+            # print(f"Collision penalty: {col_rwd}")
+        # OOB penalty
+        if self.boundary_check():
+            oob_rwd = -10.0
+            reward += oob_rwd
+            # print(f"OOB penalty: {oob_rwd}")
+        yaw = abs(self.car[2])
+        yaw_deg = np.degrees(yaw)
+        # reward close to target speed and abs(yaw) < 7 degrees
+        if yaw_deg < 7.0:
+            reward += 0.5
+            if abs(self.car_speed - configs.TARGET_SPEED) < 1.0:
+                spd_rwd = 1.0
+                reward += spd_rwd
+                # print(f"Speed reward: {spd_rwd}")
+        # reward being in right lane (lane 3)
+        lane = self.y_to_road_id(self.car[1])
+        if lane == 3:
+            lane_rwd = 1.0
+            reward += lane_rwd
+            # print(f"Lane reward: {lane_rwd}")
+        # timestep penalty
+        reward -= 0.1
+        # penalize yaw
+        if yaw_deg > 25.0:
+            yaw_rwd = yaw_deg * -0.05
+            reward += yaw_rwd
+            # print(f"Yaw penalty: {yaw_rwd}")
+        # large penalty for yaw > 70 degrees
+        if yaw_deg > 70.0:
+            yaw_rwd = -5.0
+            reward += yaw_rwd
+            # print(f"Large yaw penalty: {yaw_rwd}")
+        if yaw_deg > 90.0:
+            yaw_rwd = -10.0
+            reward += yaw_rwd
+            # print(f"Reversed penalty: {yaw_rwd}")
+        return reward
+
+    def boundary_check(self):
         if self.car[1] < self.road_top - 20.0:
-            print("Too high")
+            # print("Too high")
             return True
         if self.car[1] > self.road_bottom + 20.0:
-            print("Too low")
+            # print("Too low")
+            return True
+        return False
+
+    def termin_check(self, reward):
+        # time out handled by truncate
+        # < min reward
+        if reward < MIN_RWD:
+            # print(f"Terminating for low reward: {reward}")
             return True
         return False
     
@@ -209,25 +247,7 @@ class CarAndTargetEnv(gym.Env):
         return x_rot, y_rot
     
     def parse_cmds(self, turn, acc):
-        turn_cmds = {
-            0: -1.0, # slight left
-            1: -2.0, # med left
-            2: -3.0, # hard left
-            3: 0.0,  # no turn
-            4: 1.0,  # slight right
-            5: 2.0,  # med right
-            6: 3.0   # hard right
-        }
-        acc_cmds = {
-            0: 2.0,   # slight accel
-            1: 5.0,   # med accel
-            2: 10.0,  # hard accel
-            3: 0.0,   # no accel
-            4: -2.0,  # slight brake
-            5: -5.0,  # med brake
-            6: -10.0   # hard brake
-        }
-        return turn_cmds[turn], acc_cmds[acc] # omega, spd
+        return configs.turn_cmds[turn], configs.acc_cmds[acc] # omega, spd
 
     def step(self, action):
         self.step_count += 1
@@ -238,7 +258,11 @@ class CarAndTargetEnv(gym.Env):
         turn_cmd = action[0]
         acc_cmd = action[1]
 
-        turn_delta, acc_delta = self.parse_cmds(turn_cmd, acc_cmd)
+        if configs.DISCRETE:
+            turn_delta, acc_delta = self.parse_cmds(turn_cmd, acc_cmd)
+        else:
+            turn_delta = turn_cmd
+            acc_delta = acc_cmd
         alpha += dt * turn_delta * self.omega
         spd = np.clip(speed + acc_delta, self.min_speed, self.max_speed)
         self.car_speed = spd
@@ -253,16 +277,22 @@ class CarAndTargetEnv(gym.Env):
         self.car[1] += dt * speed * np.sin(alpha)
         self.car[2] = alpha
 
+        # print(f"Car position: ({self.car[0]:.2f}, {self.car[1]:.2f}), speed: {self.car_speed:.2f}, heading: {np.degrees(self.car[2]):.2f} degrees")
+
         # update agent_1 position
         self.agent_1[0] += self.agent_1_speed * dt * np.cos(self.agent_1[2])
         self.agent_1[1] += self.agent_1_speed * dt * np.sin(self.agent_1[2])
         self.respawn_agent_if_offscreen()
-        
-        truncated = self.step_count >= self.max_episode_steps
-        terminated = self.termin_check()
 
-        # placeholder reward for now
-        reward = 0.0
+        reward = self.reward_calc()
+        truncated = self.step_count >= self.max_episode_steps
+        self.eps_reward += reward
+        terminated = self.termin_check(self.eps_reward)
+        done = terminated or truncated
+        if done:
+            # add final distance reward
+            dist_traveled = self.car[0] - 100.0
+            reward += (dist_traveled - 200) * 0.1 # if didn't go far enough, becomes penalty
 
         if self.render_mode == "human":
             self._render_frame()

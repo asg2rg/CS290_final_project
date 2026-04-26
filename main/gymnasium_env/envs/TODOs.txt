@@ -1,6 +1,6 @@
 1. env action range: clip just beyond legal action magnitude; penalize for illegal actions
 2. reward function: tbd
-3. TD3 goodies
+3. (V) TD3 goodies
 4. termination condition
 5. (V) collision checks
 
