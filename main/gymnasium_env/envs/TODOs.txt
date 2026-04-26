@@ -1,8 +1,9 @@
-1. env action range: clip just beyond legal action magnitude; penalize for illegal actions
-2. reward function: tbd
+1. (V) env action range: clip just beyond legal action magnitude; penalize for illegal actions
+2. (V) reward function: tbd
 3. (V) TD3 goodies
-4. termination condition
+4. (V) termination condition
 5. (V) collision checks
+6. parallel envs
 
 NOTES:
 observations: target speed, car road id, car speed, car heading, agent_1 road id, agent_1 speed, agent_1 heading, relative distance, rel to agent

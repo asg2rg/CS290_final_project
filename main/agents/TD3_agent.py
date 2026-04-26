@@ -39,7 +39,7 @@ class TD3Agent:
         self.act_history = [] # list of np arrays, each of shape (action_dim,)
 
         # hyperparams
-        self.gamma = 0.99
+        self.gamma = configs.DISCOUNT
         self.tau = 0.005
         self.noise_std = 0.2
         self.noise_clip = 0.5
@@ -116,6 +116,7 @@ class TD3Agent:
         if len(self.replay_buffer) < configs.BATCH_SIZE:
             return
         
+        loss_dict = {}
         batch_obs, batch_actions, batch_rewards, batch_next_obs, batch_dones = self.replay_buffer.sample(configs.BATCH_SIZE, device=self.device)
         # compute target Q value
         with torch.no_grad():
@@ -143,6 +144,7 @@ class TD3Agent:
         self.critic_2_optimizer.step()
 
         # delayed policy updates
+        actor_loss = None
         if step % 2 == 1:
             # update actor network
             actor_loss = -self.critic_1(batch_obs, self.actor(batch_obs)).mean()
@@ -158,8 +160,34 @@ class TD3Agent:
             # print every 500 steps
             if step % 500 == 1:
                 print(f"Step {step}: Actor loss = {actor_loss.item():.2f}, Critic 1 loss = {critic_1_loss.item():.2f}, Critic 2 loss = {critic_2_loss.item():.2f}, Epsilon = {self.epsilon:.2f}")
+        loss_dict = {
+            'actor_loss': actor_loss.item() if actor_loss is not None else None,
+            'critic_1_loss': critic_1_loss.item(),
+            'critic_2_loss': critic_2_loss.item(),
+            'epsilon': self.epsilon,
+        }
+        return loss_dict
 
     def decay_epsilon(self, step):
         if step % self.decay_interval == 0 and self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
             self.epsilon = max(self.epsilon, self.epsilon_min)
+    
+    def save_checkpoint(self, path):
+        torch.save({
+            'actor_state_dict': self.actor.state_dict(),
+            'critic_1_state_dict': self.critic_1.state_dict(),
+            'critic_2_state_dict': self.critic_2.state_dict(),
+            'actor_optimizer_state_dict': self.actor_optimizer.state_dict(),
+            'critic_1_optimizer_state_dict': self.critic_1_optimizer.state_dict(),
+            'critic_2_optimizer_state_dict': self.critic_2_optimizer.state_dict(),
+        }, path)
+    
+    def load_checkpoint(self, path):
+        checkpoint = torch.load(path, map_location=self.device)
+        self.actor.load_state_dict(checkpoint['actor_state_dict'])
+        self.critic_1.load_state_dict(checkpoint['critic_1_state_dict'])
+        self.critic_2.load_state_dict(checkpoint['critic_2_state_dict'])
+        self.actor_optimizer.load_state_dict(checkpoint['actor_optimizer_state_dict'])
+        self.critic_1_optimizer.load_state_dict(checkpoint['critic_1_optimizer_state_dict'])
+        self.critic_2_optimizer.load_state_dict(checkpoint['critic_2_optimizer_state_dict'])

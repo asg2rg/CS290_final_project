@@ -9,7 +9,7 @@ dt = configs.TIMESTEP
 car_velocity = configs.CAR_INITIAL_VEL
 agent_1_velocity = configs.AGENT_1_INITIAL_VEL
 
-MIN_RWD = -100.0
+MIN_RWD = -2000.0
 
 class CarAndTargetEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 10}
@@ -46,6 +46,7 @@ class CarAndTargetEnv(gym.Env):
         # car info
         self.car = np.array([100.0, 100.0, 0.0], dtype=np.float32) # car init x at 100
         self.agent_1 = np.array([440.0, 400.0, np.pi], dtype=np.float32)
+        self.last_x = 100.0
 
         # speeds
         self.car_speed = car_velocity
@@ -102,6 +103,7 @@ class CarAndTargetEnv(gym.Env):
         self.eps_reward = 0.0
 
         self.car[0] = 100.0
+        self.last_x = 100.0
         self.car[1] = self.road_center_y(2)
         self.car[2] = 0.0
         self.car_speed = car_velocity
@@ -116,7 +118,7 @@ class CarAndTargetEnv(gym.Env):
 
         return self._get_obs(), self._get_info()
 
-    def reward_calc(self):
+    def reward_calc(self, turn_cmd, acc_cmd):
         reward = 0.0
         # collision penalty
         if self.collision_check():
@@ -130,6 +132,9 @@ class CarAndTargetEnv(gym.Env):
             # print(f"OOB penalty: {oob_rwd}")
         yaw = abs(self.car[2])
         yaw_deg = np.degrees(yaw)
+        # reward positive x distance traveled
+        dist_rwd = self.car[0] - self.last_x
+        reward += dist_rwd * 0.1
         # reward close to target speed and abs(yaw) < 7 degrees
         if yaw_deg < 7.0:
             reward += 0.5
@@ -159,6 +164,15 @@ class CarAndTargetEnv(gym.Env):
             yaw_rwd = -10.0
             reward += yaw_rwd
             # print(f"Reversed penalty: {yaw_rwd}")
+        if configs.DISCRETE:
+            # penalize excessive speed
+            if abs(acc_cmd) > configs.MAX_ACC:
+                reward -= (abs(acc_cmd) - configs.MAX_ACC) * 0.5
+                # print(f"Excessive acceleration penalty: acc {acc_cmd}")
+            # penalize excessive turning
+            if abs(turn_cmd) > configs.MAX_ANG:
+                reward -= (abs(turn_cmd) - configs.MAX_ANG) * 0.5
+                # print(f"Excessive turning penalty: turn {turn_cmd}")
         return reward
 
     def boundary_check(self):
@@ -260,11 +274,16 @@ class CarAndTargetEnv(gym.Env):
 
         if configs.DISCRETE:
             turn_delta, acc_delta = self.parse_cmds(turn_cmd, acc_cmd)
+            clip_acc = acc_delta
+            clip_turn = turn_delta
         else:
             turn_delta = turn_cmd
             acc_delta = acc_cmd
-        alpha += dt * turn_delta * self.omega
-        spd = np.clip(speed + acc_delta, self.min_speed, self.max_speed)
+            clip_acc = np.clip(acc_delta, -configs.MAX_ACC, configs.MAX_ACC)
+            clip_turn = np.clip(turn_delta, -configs.MAX_ANG, configs.MAX_ANG)
+            
+        alpha += dt * clip_turn * self.omega
+        spd = np.clip(speed + clip_acc, self.min_speed, self.max_speed)
         self.car_speed = spd
 
         if alpha > np.pi:
@@ -284,15 +303,16 @@ class CarAndTargetEnv(gym.Env):
         self.agent_1[1] += self.agent_1_speed * dt * np.sin(self.agent_1[2])
         self.respawn_agent_if_offscreen()
 
-        reward = self.reward_calc()
+        reward = self.reward_calc(turn_delta, acc_delta)
         truncated = self.step_count >= self.max_episode_steps
         self.eps_reward += reward
+        self.last_x = self.car[0]
         terminated = self.termin_check(self.eps_reward)
         done = terminated or truncated
-        if done:
-            # add final distance reward
-            dist_traveled = self.car[0] - 100.0
-            reward += (dist_traveled - 200) * 0.1 # if didn't go far enough, becomes penalty
+        # if done:
+        #     # add final distance reward
+        #     dist_traveled = self.car[0] - 100.0
+        #     reward += (dist_traveled - 200) * 0.1 # if didn't go far enough, becomes penalty
 
         if self.render_mode == "human":
             self._render_frame()
