@@ -306,7 +306,7 @@ class CarAndTargetEnv(gym.Env):
 
         # update agent_1 position
         self.agent_1.step(dt)
-        self.respawn_agent_if_offscreen()
+        self.respawn_agent_if_offscreen(self.y_to_road_id(self.car[1]))
 
         reward = self.reward_calc(turn_delta, acc_delta)
         truncated = self.step_count >= self.max_episode_steps
@@ -324,11 +324,11 @@ class CarAndTargetEnv(gym.Env):
 
         return self._get_obs(), reward, terminated, truncated, self._get_info()
 
-    def respawn_agent_if_offscreen(self):
+    def respawn_agent_if_offscreen(self, road_id=1):
         agent_screen_x = self.world_to_screen_x(self.agent_1.state[0])
 
         if agent_screen_x < -self.car_length:
-            self.agent_1.reset(x=self.car[0] + (self.window_width - self.camera_x) + 100, y=self.road_center_y(1), heading=np.pi, speed=agent_1_velocity)
+            self.agent_1.reset(x=self.car[0] + (self.window_width - self.camera_x) + 100, y=self.road_center_y(road_id), heading=0, speed=agent_1_velocity)
         agent_screen_x = self.world_to_screen_x(self.agent_1.state[0])
 
 
