@@ -61,7 +61,7 @@ def main():
     parser.add_argument('--save_path', type=str, default=save_path, help='Path to save the trained model checkpoint')
     parser.add_argument('--unclamp', action='store_true', default = False, help='Clamp actions to max values: only for continuous env')
     parser.add_argument('--discrete', action='store_true', default = False, help='Use discrete action space')
-    parser.add_argument('--eval', action='store_true', help='Run evaluation loop after training')
+    parser.add_argument('--eval', action='store_true', default = False, help='Run evaluation loop after training')
     args = parser.parse_args()
     
     print("##############################################")

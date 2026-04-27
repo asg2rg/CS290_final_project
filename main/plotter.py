@@ -190,16 +190,10 @@ def parse_args():
 		description="Generate training and episode plots from TD3 CSV logs."
 	)
 	parser.add_argument(
-		"--training-csv",
-		type=Path,
-		required=True,
-		help="Path to training log CSV (must include step, actor_loss, critic_1_loss, critic_2_loss).",
-	)
-	parser.add_argument(
-		"--episode-csv",
-		type=Path,
-		required=True,
-		help="Path to episode log CSV (must include episode, reward, discounted_reward, steps, distance_traveled).",
+		"--prefix",
+		type=str,
+		default="",
+		help="Prefix for log files.",
 	)
 	parser.add_argument(
 		"--outdir",
@@ -217,20 +211,25 @@ def parse_args():
 
 def main():
     args = parse_args()
-    args.training_csv = Path("logs") / args.training_csv
-    args.episode_csv = Path("logs") / args.episode_csv
+    training_path = "td3_training_log.csv"
+    episode_path = "td3_episode_log.csv"
+    if args.prefix:
+        training_path = args.prefix + "_" + training_path
+        episode_path = args.prefix + "_" + episode_path
+    training_path = "logs/" + training_path
+    episode_path = "logs/" + episode_path
 
-    if not args.training_csv.exists():
-        raise FileNotFoundError(f"Training CSV not found: {args.training_csv}")
-    if not args.episode_csv.exists():
-        raise FileNotFoundError(f"Episode CSV not found: {args.episode_csv}")
+    if not Path(training_path).is_file():
+        raise FileNotFoundError(f"Training CSV not found: {training_path}")
+    if not Path(episode_path).is_file():
+        raise FileNotFoundError(f"Episode CSV not found: {episode_path}")
 
     args.outdir.mkdir(parents=True, exist_ok=True)
 
-    _plot_training_losses(args.training_csv, args.outdir, args.show)
-    _plot_episode_rewards(args.episode_csv, args.outdir, args.show)
-    _plot_episode_distance(args.episode_csv, args.outdir, args.show)
-    _plot_episode_steps(args.episode_csv, args.outdir, args.show)
+    _plot_training_losses(training_path, args.outdir, args.show)
+    _plot_episode_rewards(episode_path, args.outdir, args.show)
+    _plot_episode_distance(episode_path, args.outdir, args.show)
+    _plot_episode_steps(episode_path, args.outdir, args.show)
 
     print(f"Saved plots to: {args.outdir.resolve()}")
 
@@ -238,5 +237,5 @@ def main():
 if __name__ == "__main__":
 	main()
 
-# run with:
-# python plotter.py --training-csv clamped_td3_training_log.csv --episode-csv .\clamped_td3_episode_log.csv --outdir .\plots_test
+# run example:
+# python plotter.py --prefix clamped --outdir plots/clamped --show
