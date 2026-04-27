@@ -1,3 +1,5 @@
+EVAL = False
+
 # gym setup
 WINDOW_H = 500
 WINDOW_W = 1200
@@ -19,6 +21,7 @@ TARGET_SPEED = 50.0
 MIN_SPEED = 0.0
 MAX_SPEED = 100.0
 TURN_UNIT = 1.0
+CLAMP = False
 
 OBS_DIM = 8
 ACTION_DIM = 2
@@ -54,16 +57,21 @@ acc_cmds = {
         }
 
 # model
-EPS_START = 1.0
-EPS_MIN = 0.05
+EXPLORE_NOISE_STD = 0.3
+EXPLORE_NOISE_MIN = 0.05
+
 G_STEPS = 1_000_000
 DECAY_INTERVAL = 1000
-EPS_DECAY = 0.9957
-DISCOUNT = 0.99
 
+EPS_START = 1.0
+EPS_MIN = 0.05
+EPS_DECAY = 0.9957
+
+DISCOUNT = 0.99
 BATCH_SIZE = 1024
 
 def verify_setup(dec = EPS_DECAY):
+    import math
     # check how many steps to decay from EPS_START to EPS_MIN with EPS_DECAY
     ratio = EPS_MIN / EPS_START
     steps = math.log(ratio, dec)

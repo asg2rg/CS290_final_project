@@ -6,7 +6,7 @@ from utils.replay import ReplayBuffer
 import utils.configs as configs
 
 class TD3Agent:
-    def __init__(self, state_dim = 8, action_dim = 2, actor_lr=1e-3, critic_lr=1e-3):
+    def __init__(self, state_dim = 8, action_dim = 2, actor_lr=1e-4, critic_lr=1e-4):
         self.stack_sz = configs.STACK_SZ
         self.state_dim = state_dim
         self.act_dim = action_dim
@@ -49,6 +49,8 @@ class TD3Agent:
         self.epsilon_min = configs.EPS_MIN
         self.epsilon_decay = configs.EPS_DECAY
         self.decay_interval = configs.DECAY_INTERVAL
+        self.explore_noise_std = configs.EXPLORE_NOISE_STD
+        self.explore_noise_min = configs.EXPLORE_NOISE_MIN
 
         self.target_speed = configs.TARGET_SPEED
     
@@ -100,17 +102,36 @@ class TD3Agent:
         for target_param, param in zip(self.critic_2_target.parameters(), self.critic_2.parameters()):
             target_param.data.copy_(tau * param.data + (1.0 - tau) * target_param.data)
     
-    def make_decision(self, obs_t):
-        # print(f"Processing obs[{obs_t.shape}]: {obs_t.cpu().numpy()}")
-        greed = np.random.rand()
-        if greed < self.epsilon:
-            # explore: random action
-            action = np.random.uniform(low=[-configs.MAX_ANG, -configs.MAX_ACC], high=[configs.MAX_ANG, configs.MAX_ACC], size=(self.act_dim,))
-        else:
-            # exploit: action from actor
+    def make_decision(self, obs_t, step):
+        if configs.EVAL:
             with torch.no_grad():
                 action = self.actor(obs_t).squeeze(0).cpu().numpy()
-        return action
+            return action
+        # print(f"Processing obs[{obs_t.shape}]: {obs_t.cpu().numpy()}")
+        # greed = np.random.rand()
+        # if greed < self.epsilon:
+            # explore: random action
+        if not configs.DISCRETE:
+            if step < configs.G_STEPS*0.01:
+                action = np.random.uniform(low=[-configs.MAX_ANG, -configs.MAX_ACC], high=[configs.MAX_ANG, configs.MAX_ACC], size=(self.act_dim,))
+            else:
+                # exploit: action from actor
+                with torch.no_grad():
+                    action = self.actor(obs_t).squeeze(0).cpu().numpy()
+                # exploration noise
+                noise = np.random.normal(0, self.get_noise_std(step), size=action.shape)
+                if configs.CLAMP:
+                    action = (action + noise).clip([-configs.MAX_ANG, -configs.MAX_ACC], [configs.MAX_ANG, configs.MAX_ACC])
+                else:
+                    action = action + noise
+            return action
+        else:
+            if np.random.rand() < self.epsilon:
+                action = np.random.randint(0, configs.TURN_SHAPE, size=(1,)).tolist() + np.random.randint(0, configs.ACC_SHAPE, size=(1,)).tolist()
+            else:
+                with torch.no_grad():
+                    action = self.actor(obs_t).squeeze(0).cpu().numpy()
+                ... # TODO
 
     def train(self, step):
         if len(self.replay_buffer) < configs.BATCH_SIZE:
@@ -121,7 +142,10 @@ class TD3Agent:
         # compute target Q value
         with torch.no_grad():
             noise = (torch.randn_like(batch_actions) * self.noise_std).clamp(-self.noise_clip, self.noise_clip).to(self.device)
-            next_actions = (self.actor_target(batch_next_obs) + noise).clamp(-configs.MAX_ANG, configs.MAX_ACC)
+            next_actions = self.actor_target(batch_next_obs) + noise
+            low = torch.tensor([-configs.MAX_ANG, -configs.MAX_ACC], device=self.device).unsqueeze(0)
+            high = torch.tensor([configs.MAX_ANG, configs.MAX_ACC], device=self.device).unsqueeze(0)
+            next_actions = torch.max(torch.min(next_actions, high), low)
             target_q1 = self.critic_1_target(batch_next_obs, next_actions)
             target_q2 = self.critic_2_target(batch_next_obs, next_actions)
             target_q = torch.min(target_q1, target_q2)
@@ -159,12 +183,12 @@ class TD3Agent:
 
             # print every 500 steps
             if step % 500 == 1:
-                print(f"Step {step}: Actor loss = {actor_loss.item():.2f}, Critic 1 loss = {critic_1_loss.item():.2f}, Critic 2 loss = {critic_2_loss.item():.2f}, Epsilon = {self.epsilon:.2f}")
+                print(f"Step {step}: Actor loss = {actor_loss.item():.2f}, Critic 1 loss = {critic_1_loss.item():.2f}, Critic 2 loss = {critic_2_loss.item():.2f}, Noise_STD = {self.get_noise_std(step):.2f}")
         loss_dict = {
             'actor_loss': actor_loss.item() if actor_loss is not None else None,
             'critic_1_loss': critic_1_loss.item(),
             'critic_2_loss': critic_2_loss.item(),
-            'epsilon': self.epsilon,
+            'noise_std': self.get_noise_std(step),
         }
         return loss_dict
 
@@ -172,6 +196,10 @@ class TD3Agent:
         if step % self.decay_interval == 0 and self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
             self.epsilon = max(self.epsilon, self.epsilon_min)
+    
+    def get_noise_std(self, step):
+        frac = min((step/(configs.G_STEPS * 0.8)), 1.0)
+        return self.explore_noise_std - (self.explore_noise_std - self.explore_noise_min) * frac
     
     def save_checkpoint(self, path):
         torch.save({
@@ -184,10 +212,15 @@ class TD3Agent:
         }, path)
     
     def load_checkpoint(self, path):
-        checkpoint = torch.load(path, map_location=self.device)
-        self.actor.load_state_dict(checkpoint['actor_state_dict'])
-        self.critic_1.load_state_dict(checkpoint['critic_1_state_dict'])
-        self.critic_2.load_state_dict(checkpoint['critic_2_state_dict'])
-        self.actor_optimizer.load_state_dict(checkpoint['actor_optimizer_state_dict'])
-        self.critic_1_optimizer.load_state_dict(checkpoint['critic_1_optimizer_state_dict'])
-        self.critic_2_optimizer.load_state_dict(checkpoint['critic_2_optimizer_state_dict'])
+        try:
+            checkpoint = torch.load(path, map_location=self.device)
+            self.actor.load_state_dict(checkpoint['actor_state_dict'])
+            self.critic_1.load_state_dict(checkpoint['critic_1_state_dict'])
+            self.critic_2.load_state_dict(checkpoint['critic_2_state_dict'])
+            self.actor_optimizer.load_state_dict(checkpoint['actor_optimizer_state_dict'])
+            self.critic_1_optimizer.load_state_dict(checkpoint['critic_1_optimizer_state_dict'])
+            self.critic_2_optimizer.load_state_dict(checkpoint['critic_2_optimizer_state_dict'])
+            print(f"Checkpoint loaded successfully from {path}")
+        except Exception as e:
+            print(f"Error loading checkpoint from {path}: {e}")
+            raise e

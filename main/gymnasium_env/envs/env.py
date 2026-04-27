@@ -9,7 +9,7 @@ dt = configs.TIMESTEP
 car_velocity = configs.CAR_INITIAL_VEL
 agent_1_velocity = configs.AGENT_1_INITIAL_VEL
 
-MIN_RWD = -2000.0
+MIN_RWD = -200.0
 
 class CarAndTargetEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 10}
@@ -27,6 +27,7 @@ class CarAndTargetEnv(gym.Env):
         self.window_height = configs.WINDOW_H
         self.window = None
         self.clock = None
+        self.font = None
 
         # define the road
         self.num_roads = configs.ROAD_CNT
@@ -119,60 +120,58 @@ class CarAndTargetEnv(gym.Env):
         return self._get_obs(), self._get_info()
 
     def reward_calc(self, turn_cmd, acc_cmd):
-        reward = 0.0
-        # collision penalty
-        if self.collision_check():
-            col_rwd = -10.0
-            reward += col_rwd
-            # print(f"Collision penalty: {col_rwd}")
-        # OOB penalty
-        if self.boundary_check():
-            oob_rwd = -10.0
-            reward += oob_rwd
-            # print(f"OOB penalty: {oob_rwd}")
+        reward = -0.1 # timestep penalty
         yaw = abs(self.car[2])
         yaw_deg = np.degrees(yaw)
-        # reward positive x distance traveled
+        #### PENALTIES ####
+        # collision penalty
+        if self.collision_check():
+            col_rwd = -3.0
+            reward += col_rwd
+        # OOB penalty
+        if self.boundary_check():
+            oob_rwd = -3.0
+            reward += oob_rwd
+        # large penalty for yaw > 70 degrees
+        if yaw_deg > 70.0:
+            yaw_rwd = -2.0
+            reward += yaw_rwd
+            # print(f"Large yaw penalty: {yaw_rwd}")
+        if yaw_deg > 90.0:
+            yaw_rwd = -3.0
+            reward += yaw_rwd
+            # print(f"Reversed penalty: {yaw_rwd}")
+        if not configs.DISCRETE and not configs.EVAL:
+            # penalize excessive speed
+            if abs(acc_cmd) > configs.MAX_ACC:
+                reward -= (abs(acc_cmd) - configs.MAX_ACC) * 0.1
+                # print(f"Excessive acceleration penalty: acc {acc_cmd}")
+            # penalize excessive turning
+            if abs(turn_cmd) > configs.MAX_ANG:
+                reward -= (abs(turn_cmd) - configs.MAX_ANG) * 0.3
+                # print(f"Excessive turning penalty: turn {turn_cmd}")
+        
+        #### REWARDS ####
+        # positive distance reward
         dist_rwd = self.car[0] - self.last_x
-        reward += dist_rwd * 0.1
-        # reward close to target speed and abs(yaw) < 7 degrees
-        if yaw_deg < 7.0:
+        reward += min(dist_rwd * 0.01, 0.5)
+        # reward close to target speed and straight
+        if yaw_deg < 3.0:
             reward += 0.5
-            if abs(self.car_speed - configs.TARGET_SPEED) < 1.0:
-                spd_rwd = 1.0
-                reward += spd_rwd
-                # print(f"Speed reward: {spd_rwd}")
+            reward += max((2.0 - abs(self.car_speed - configs.TARGET_SPEED)), 0.0)
         # reward being in right lane (lane 3)
         lane = self.y_to_road_id(self.car[1])
         if lane == 3:
             lane_rwd = 1.0
             reward += lane_rwd
             # print(f"Lane reward: {lane_rwd}")
-        # timestep penalty
-        reward -= 0.1
+        
+        #### JERKING PENALTIES ####
         # penalize yaw
-        if yaw_deg > 25.0:
+        if yaw_deg > 7.0:
             yaw_rwd = yaw_deg * -0.05
             reward += yaw_rwd
             # print(f"Yaw penalty: {yaw_rwd}")
-        # large penalty for yaw > 70 degrees
-        if yaw_deg > 70.0:
-            yaw_rwd = -5.0
-            reward += yaw_rwd
-            # print(f"Large yaw penalty: {yaw_rwd}")
-        if yaw_deg > 90.0:
-            yaw_rwd = -10.0
-            reward += yaw_rwd
-            # print(f"Reversed penalty: {yaw_rwd}")
-        if configs.DISCRETE:
-            # penalize excessive speed
-            if abs(acc_cmd) > configs.MAX_ACC:
-                reward -= (abs(acc_cmd) - configs.MAX_ACC) * 0.5
-                # print(f"Excessive acceleration penalty: acc {acc_cmd}")
-            # penalize excessive turning
-            if abs(turn_cmd) > configs.MAX_ANG:
-                reward -= (abs(turn_cmd) - configs.MAX_ANG) * 0.5
-                # print(f"Excessive turning penalty: turn {turn_cmd}")
         return reward
 
     def boundary_check(self):
@@ -190,6 +189,15 @@ class CarAndTargetEnv(gym.Env):
         if reward < MIN_RWD:
             # print(f"Terminating for low reward: {reward}")
             return True
+        if configs.EVAL:
+            # terminate if collision
+            if self.collision_check():
+                # print("Terminating for collision")
+                return True
+            # terminate if OOB
+            if self.boundary_check():
+                # print("Terminating for OOB")
+                return True
         return False
     
     def collision_check(self):
@@ -414,6 +422,9 @@ class CarAndTargetEnv(gym.Env):
 
         if self.clock is None and self.render_mode == "human":
             self.clock = pygame.time.Clock()
+        if self.font is None:
+            pygame.font.init()
+            self.font = pygame.font.SysFont("consolas", 22)
 
         canvas = pygame.Surface((self.window_width, self.window_height))
         canvas.fill((30, 120, 30))  # outer background
@@ -423,6 +434,23 @@ class CarAndTargetEnv(gym.Env):
         # car and agent_1 car
         self.draw_vehicle(canvas, self.car[0], self.car[1], self.car[2], (50, 150, 255))
         self.draw_vehicle(canvas, self.agent_1[0], self.agent_1[1], self.agent_1[2], (20, 20, 20))
+
+        # HUD in the upper-left corner
+        hud_x = 16
+        hud_y = 12
+        hud_lines = [
+            f"SPD: {self.car_speed:.1f}/{configs.TARGET_SPEED:.1f}",
+            f"RWD: {self.eps_reward:.1f}",
+        ]
+        text_color = (255, 255, 255)
+        bg_color = (0, 0, 0)
+        line_spacing = 26
+        hud_width = 210
+        hud_height = 16 + line_spacing * len(hud_lines)
+        pygame.draw.rect(canvas, bg_color, pygame.Rect(hud_x - 8, hud_y - 6, hud_width, hud_height), border_radius=6)
+        for idx, line in enumerate(hud_lines):
+            text_surface = self.font.render(line, True, text_color)
+            canvas.blit(text_surface, (hud_x, hud_y + idx * line_spacing))
     
         if self.render_mode == "human":
             self.window.blit(canvas, canvas.get_rect())
