@@ -216,8 +216,8 @@ def main():
     if args.prefix:
         training_path = args.prefix + "_" + training_path
         episode_path = args.prefix + "_" + episode_path
-    training_path = "logs/" + training_path
-    episode_path = "logs/" + episode_path
+    # training_path = "logs/" + training_path
+    # episode_path = "logs/" + episode_path
 
     if not Path(training_path).is_file():
         raise FileNotFoundError(f"Training CSV not found: {training_path}")

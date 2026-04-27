@@ -10,7 +10,7 @@ class ReplayBuffer:
 
         self.state_dim = configs.OBS_DIM
         self.action_dim = configs.ACTION_DIM
-        self.obs_dim = 1 + self.state_dim * configs.STACK_SZ + self.action_dim * (configs.STACK_SZ - 1)
+        self.obs_dim = configs.STACK_OBS_DIM
         self.obs = np.zeros((capacity, self.obs_dim), dtype=np.float32)
         self.next_obs = np.zeros((capacity, self.obs_dim), dtype=np.float32)
         self.actions = np.zeros((capacity, self.action_dim), dtype=np.float32)

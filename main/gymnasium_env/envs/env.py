@@ -9,7 +9,7 @@ dt = configs.TIMESTEP
 car_velocity = configs.CAR_INITIAL_VEL
 agent_1_velocity = configs.AGENT_1_INITIAL_VEL
 
-MIN_RWD = -200.0
+MIN_RWD = -300.0
 
 class CarAndTargetEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 10}
@@ -152,16 +152,24 @@ class CarAndTargetEnv(gym.Env):
                 # print(f"Excessive turning penalty: turn {turn_cmd}")
         
         #### REWARDS ####
+        # only if speed > 0
+        if self.car_speed < 0.1:
+            return reward
         # positive distance reward
         dist_rwd = self.car[0] - self.last_x
-        reward += min(dist_rwd * 0.01, 0.5)
+        reward += min(dist_rwd * 0.01, 0.1)
         # reward close to target speed and straight
         if yaw_deg < 3.0:
             reward += 0.5
-            reward += max((2.0 - abs(self.car_speed - configs.TARGET_SPEED)), 0.0)
+        # if yaw_deg < 10.0:
+            speed_diff = abs(self.car_speed - configs.TARGET_SPEED)
+            speed_rwd = 2.0 - speed_diff * 0.5 # penalize if difference is great
+            if speed_rwd < -2.0:
+                speed_rwd = -2.0
+            reward += speed_rwd
         # reward being in right lane (lane 3)
         lane = self.y_to_road_id(self.car[1])
-        if lane == 3:
+        if lane == configs.TARGET_LANE:
             lane_rwd = 1.0
             reward += lane_rwd
             # print(f"Lane reward: {lane_rwd}")
@@ -273,6 +281,14 @@ class CarAndTargetEnv(gym.Env):
 
     def step(self, action):
         self.step_count += 1
+        # change target lane every 100 steps
+        if self.step_count % 100 == 0:
+            if configs.TARGET_LANE == 3:
+                configs.TARGET_LANE = 2
+            else:
+                configs.TARGET_LANE = 3
+            configs.TARGET_SPEED += np.random.uniform(-3.0, 3.0)
+            # print(f"New target lane: {configs.TARGET_LANE}, new target speed: {configs.TARGET_SPEED:.2f}")
 
         alpha = self.car[2]
         speed = self.car_speed   # base speed for this step

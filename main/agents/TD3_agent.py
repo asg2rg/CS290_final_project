@@ -10,8 +10,7 @@ class TD3Agent:
         self.stack_sz = configs.STACK_SZ
         self.state_dim = state_dim
         self.act_dim = action_dim
-        # obs size: target speed + current obs + past (obs, action) pairs
-        self.obs_dims = 1 + self.state_dim * self.stack_sz + self.act_dim * (self.stack_sz - 1)
+        self.obs_dims = configs.STACK_OBS_DIM
         if torch.cuda.is_available():
             print("Using GPU")
             self.device = torch.device("cuda")
@@ -51,8 +50,6 @@ class TD3Agent:
         self.decay_interval = configs.DECAY_INTERVAL
         self.explore_noise_std = configs.EXPLORE_NOISE_STD
         self.explore_noise_min = configs.EXPLORE_NOISE_MIN
-
-        self.target_speed = configs.TARGET_SPEED
     
     def init_hists(self):
         self.obs_history = []
@@ -72,27 +69,25 @@ class TD3Agent:
         self.act_history.append(action)
         if len(self.act_history) > self.stack_sz-1:
             self.act_history.pop(0)
-        
+    
+    def update_hists(self, obs, action):
+        self._add_obs_history(obs)
+        self._add_act_history(action)
+
+    def build_replay_frame(self):
+        parts = [np.array([configs.TARGET_SPEED, configs.TARGET_LANE], dtype=np.float32)] + self.obs_history + self.act_history
+        obs_np = np.concatenate(parts, axis=0)
+        return obs_np
+
     def parse_obs(self):
-        parts = [np.array([self.target_speed], dtype=np.float32)] + self.obs_history + self.act_history
+        parts = [np.array([configs.TARGET_SPEED, configs.TARGET_LANE], dtype=np.float32)] + self.obs_history + self.act_history
+        
         obs_np = np.concatenate(parts, axis=0)
         obs_t = torch.FloatTensor(obs_np).unsqueeze(0).to(self.device)
         return obs_t
 
-    def add_transition(self, action, reward, next_obs, done):
-        # print(f"Shape of obs history: {[h.shape for h in self.obs_history]}")
-        # print(f"Shape of act history: {[h.shape for h in self.act_history]}")
-        replay_parts = [np.array([self.target_speed], dtype=np.float32)] + self.obs_history + self.act_history
-        replay_obs = np.concatenate(replay_parts, axis=0)
-        # print(f"Shape of replay obs: {replay_obs.shape}")
-        self._add_obs_history(next_obs)
-        self._add_act_history(action)
-        # print(f"Shape of updated obs history: {[h.shape for h in self.obs_history]}")
-        # print(f"Shape of updated act history: {[h.shape for h in self.act_history]}")
-        replay_next_parts = [np.array([self.target_speed], dtype=np.float32)] + self.obs_history + self.act_history
-        replay_next = np.concatenate(replay_next_parts, axis=0)
-        # print(f"Shape of replay next: {replay_next.shape}")
-        self.replay_buffer.add(replay_obs, action, reward, replay_next, done)
+    def add_transition(self, obs_t, action, reward, next_obs_t, done):
+        self.replay_buffer.add(obs_t, action, reward, next_obs_t, done)
         
     def _update_target_networks(self, tau=0.005):
         for target_param, param in zip(self.actor_target.parameters(), self.actor.parameters()):
@@ -171,7 +166,13 @@ class TD3Agent:
         actor_loss = None
         if step % 2 == 1:
             # update actor network
-            actor_loss = -self.critic_1(batch_obs, self.actor(batch_obs)).mean()
+            act = self.actor(batch_obs)
+            actor_loss = -self.critic_1(batch_obs, act).mean()
+            if not configs.CLAMP:
+                # add l2 penalty for abs(action) - max_action
+                max_action = torch.tensor([configs.MAX_ANG, configs.MAX_ACC], device=self.device).unsqueeze(0)
+                l2_penalty = ((act.abs() - max_action) ** 2).mean()
+                actor_loss += 1e-3 * l2_penalty
 
             self.actor_optimizer.zero_grad()
             actor_loss.backward()

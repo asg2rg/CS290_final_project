@@ -9,7 +9,7 @@ import argparse
 logs_dir = "logs"
 ckpt_dir = "checkpoints"
 
-def eval_loop(env, agent):
+def eval_loop(env, agent, prefix):
     configs.EVAL = True
     eval_log_path = "td3_eval_log.csv"
     # load checkpoints according to configs.DISCRETE and configs.CLAMP
@@ -19,6 +19,9 @@ def eval_loop(env, agent):
     if configs.CLAMP:
         ckpt = "clamped_" + ckpt
         eval_log_path = "clamped_" + eval_log_path
+    if prefix != "":
+        ckpt = prefix + "-" + ckpt
+        eval_log_path = prefix + "-" + eval_log_path
     
     ckpt = ckpt_dir + "/" + ckpt
     eval_log_path = logs_dir + "/" + eval_log_path
@@ -36,8 +39,7 @@ def eval_loop(env, agent):
             action = agent.make_decision(obs_t, step=0) # no exploration noise during eval
             next_obs, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated
-            agent._add_obs_history(next_obs)
-            agent._add_act_history(action)
+            agent.update_hists(next_obs, action)
 
             episode_reward += reward
             ep_step += 1
@@ -62,6 +64,7 @@ def main():
     parser.add_argument('--unclamp', action='store_true', default = False, help='Clamp actions to max values: only for continuous env')
     parser.add_argument('--discrete', action='store_true', default = False, help='Use discrete action space')
     parser.add_argument('--eval', action='store_true', default = False, help='Run evaluation loop after training')
+    parser.add_argument('--exp-name', type=str, default="", help='Prefix for log and checkpoint files')
     args = parser.parse_args()
     
     print("##############################################")
@@ -80,6 +83,11 @@ def main():
         configs.DISCRETE = True
         print("Using discrete action space.")
     assert not (configs.DISCRETE and configs.CLAMP), "Cannot both clamp and use discrete spaces."
+    if args.exp_name != "":
+        save_path = args.exp_name + "-" + save_path
+        step_log_path = args.exp_name + "-" + step_log_path
+        eps_log_path = args.exp_name + "-" + eps_log_path
+        print(f"Files will be saved to:\n\tCheckpoint: {save_path}\n\tStep log: {step_log_path}\n\tEpisode log: {eps_log_path}")
     if args.eval:
         configs.EVAL = True
         print("Eval mode set")
@@ -93,7 +101,7 @@ def main():
         raise NotImplementedError("TD3 with discrete action space is not implemented yet.")
     
     if configs.EVAL:
-        eval_loop(env, agent)
+        eval_loop(env, agent, args.exp_name)
         return
 
     step = 0
@@ -111,10 +119,13 @@ def main():
             # interaction loop
             obs_t = agent.parse_obs()
             action = agent.make_decision(obs_t, step)
+            r_obs = agent.build_replay_frame()
             # agent.decay_epsilon(step)
             next_obs, reward, terminated, truncated, info = env.step(action)
+            agent.update_hists(next_obs, action)
             done = terminated or truncated
-            agent.add_transition(action, reward, next_obs, done) # internally advances histories
+            r_n_obs = agent.build_replay_frame()
+            agent.add_transition(r_obs, action, reward, r_n_obs, done) # internally advances histories
 
             # logging
             episode_reward += reward
