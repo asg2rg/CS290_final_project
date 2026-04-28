@@ -10,7 +10,7 @@ dt = configs.TIMESTEP
 car_velocity = configs.CAR_INITIAL_VEL
 agent_1_velocity = configs.AGENT_1_INITIAL_VEL
 
-MIN_RWD = -450.0
+MIN_RWD = -350.0
 
 class CarAndTargetEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 10}
@@ -127,7 +127,7 @@ class CarAndTargetEnv(gym.Env):
         #### PENALTIES ####
         # collision penalty
         if self.collision_check():
-            col_rwd = -3.0
+            col_rwd = -10.0
             reward += col_rwd
         # OOB penalty
         if self.boundary_check():
@@ -179,10 +179,14 @@ class CarAndTargetEnv(gym.Env):
         # reward being in right lane
         lane = self.y_to_road_id(self.car[1])
         if lane != self.last_lane:
-            lane_change_rwd = -1.0
+            lane_change_rwd = -0.5
             reward += lane_change_rwd
             # print(f"Lane change penalty: {lane_change_rwd}")
             self.last_lane = lane
+        if lane == -1:
+            lane_rwd = -2.0
+            reward += lane_rwd
+            # print(f"Off-road penalty: {lane_rwd}")
         if lane == configs.TARGET_LANE:
             lane_rwd = 2.0
             reward += lane_rwd
@@ -324,7 +328,11 @@ class CarAndTargetEnv(gym.Env):
             turn_delta = turn_cmd
             acc_delta = acc_cmd
             clip_acc = np.clip(acc_delta, -configs.MAX_ACC, configs.MAX_ACC)
+            # note: accel value * (1/dt) = accel km/h/s; with dt=0.2 accel hits 50km/h in 1s
+            # assume realistic 100km/h in 5s: 20km/h/s, MAX_ACC for 0.2dt should be 4.0
             clip_turn = np.clip(turn_delta, -configs.MAX_ANG, configs.MAX_ANG)
+            # clip alpha has been trimmed by dt already
+            # in short: our car is a straight line rocket with crappy turns
             
         alpha += dt * clip_turn * self.omega
         spd = np.clip(speed + clip_acc, self.min_speed, self.max_speed)
@@ -336,6 +344,9 @@ class CarAndTargetEnv(gym.Env):
             alpha += 2*np.pi
         
         # move forward
+        if self.collision_check():
+            speed *= 0.05
+            alpha *= -0.5
         self.car[0] += dt * speed * np.cos(alpha)
         self.car[1] += dt * speed * np.sin(alpha)
         self.car[2] = alpha
@@ -343,7 +354,11 @@ class CarAndTargetEnv(gym.Env):
         # print(f"Car position: ({self.car[0]:.2f}, {self.car[1]:.2f}), speed: {self.car_speed:.2f}, heading: {np.degrees(self.car[2]):.2f} degrees")
 
         # update agent_1 position
-        self.agent_1.step(dt)
+        # TODO: agent_1 make decision with obs
+        # TODO: 1) build agent obs
+        # TODO: 2) set agent action internally
+        agent_obs = None # TODO
+        self.agent_1.step(dt, agent_obs) # update with internal state
         self.respawn_agent_if_offscreen(self.y_to_road_id(self.car[1]))
 
         reward = self.reward_calc(turn_delta, acc_delta)
