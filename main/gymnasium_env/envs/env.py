@@ -9,7 +9,7 @@ dt = configs.TIMESTEP
 car_velocity = configs.CAR_INITIAL_VEL
 agent_1_velocity = configs.AGENT_1_INITIAL_VEL
 
-MIN_RWD = -300.0
+MIN_RWD = -450.0
 
 class CarAndTargetEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 10}
@@ -123,6 +123,7 @@ class CarAndTargetEnv(gym.Env):
         reward = -0.1 # timestep penalty
         yaw = abs(self.car[2])
         yaw_deg = np.degrees(yaw)
+        speed_diff = abs(self.car_speed - configs.TARGET_SPEED)
         #### PENALTIES ####
         # collision penalty
         if self.collision_check():
@@ -133,14 +134,17 @@ class CarAndTargetEnv(gym.Env):
             oob_rwd = -3.0
             reward += oob_rwd
         # large penalty for yaw > 70 degrees
-        if yaw_deg > 70.0:
-            yaw_rwd = -2.0
-            reward += yaw_rwd
-            # print(f"Large yaw penalty: {yaw_rwd}")
         if yaw_deg > 90.0:
             yaw_rwd = -3.0
             reward += yaw_rwd
             # print(f"Reversed penalty: {yaw_rwd}")
+        elif yaw_deg > 70.0:
+            yaw_rwd = -2.0
+            reward += yaw_rwd
+            # print(f"Large yaw penalty: {yaw_rwd}")
+        elif yaw_deg > 30.0:
+            yaw_rwd = -1.0
+            reward += yaw_rwd
         if not configs.DISCRETE and not configs.EVAL:
             # penalize excessive speed
             if abs(acc_cmd) > configs.MAX_ACC:
@@ -150,6 +154,10 @@ class CarAndTargetEnv(gym.Env):
             if abs(turn_cmd) > configs.MAX_ANG:
                 reward -= (abs(turn_cmd) - configs.MAX_ANG) * 0.3
                 # print(f"Excessive turning penalty: turn {turn_cmd}")
+            if speed_diff > 15.0:
+                spd_rwd = (speed_diff - 5.0) * -0.1
+                reward += spd_rwd
+                # print(f"Excessive speed penalty: {spd_rwd}")
         
         #### REWARDS ####
         # only if speed > 0
@@ -161,16 +169,14 @@ class CarAndTargetEnv(gym.Env):
         # reward close to target speed and straight
         if yaw_deg < 3.0:
             reward += 0.5
-        # if yaw_deg < 10.0:
-            speed_diff = abs(self.car_speed - configs.TARGET_SPEED)
-            speed_rwd = 2.0 - speed_diff * 0.5 # penalize if difference is great
-            if speed_rwd < -2.0:
-                speed_rwd = -2.0
-            reward += speed_rwd
+        elif yaw_deg < 10.0:
+            reward += 0.2
+        speed_rwd = max(3.0 - speed_diff * 0.5, 0.0)
+        reward += speed_rwd
         # reward being in right lane (lane 3)
         lane = self.y_to_road_id(self.car[1])
         if lane == configs.TARGET_LANE:
-            lane_rwd = 1.0
+            lane_rwd = 2.0
             reward += lane_rwd
             # print(f"Lane reward: {lane_rwd}")
         
@@ -282,12 +288,13 @@ class CarAndTargetEnv(gym.Env):
     def step(self, action):
         self.step_count += 1
         # change target lane every 100 steps
-        if self.step_count % 100 == 0:
+        if self.step_count % 180 == 0:
             if configs.TARGET_LANE == 3:
                 configs.TARGET_LANE = 2
             else:
                 configs.TARGET_LANE = 3
-            configs.TARGET_SPEED += np.random.uniform(-3.0, 3.0)
+        if self.step_count % 240 == 0:
+            configs.TARGET_SPEED = np.random.choice([30, 40, 50, 60, 70]) + np.random.uniform(-5.0, 5.0)
             # print(f"New target lane: {configs.TARGET_LANE}, new target speed: {configs.TARGET_SPEED:.2f}")
 
         alpha = self.car[2]
@@ -457,6 +464,8 @@ class CarAndTargetEnv(gym.Env):
         hud_lines = [
             f"SPD: {self.car_speed:.1f}/{configs.TARGET_SPEED:.1f}",
             f"RWD: {self.eps_reward:.1f}",
+            f"Lane: {self.y_to_road_id(self.car[1])} (Target: {configs.TARGET_LANE})",
+            f"Distance Traveled: {self.car[0] - 100.0:.1f}",
         ]
         text_color = (255, 255, 255)
         bg_color = (0, 0, 0)

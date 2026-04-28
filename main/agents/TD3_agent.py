@@ -31,7 +31,7 @@ class TD3Agent:
         self.critic_1_target = Critic(self.obs_dims, action_dim).to(self.device)
         self.critic_2_target = Critic(self.obs_dims, action_dim).to(self.device)
         self._update_target_networks(tau=1.0)  # hard update at initialization
-        self.replay_buffer = ReplayBuffer(capacity=1000000)
+        self.replay_buffer = ReplayBuffer(capacity=500000)
 
         # histories
         self.obs_history = [] # list of np arrays, each of shape (obs_dim,)
@@ -107,7 +107,7 @@ class TD3Agent:
         # if greed < self.epsilon:
             # explore: random action
         if not configs.DISCRETE:
-            if step < configs.G_STEPS*0.01:
+            if step < configs.G_STEPS*0.05:
                 action = np.random.uniform(low=[-configs.MAX_ANG, -configs.MAX_ACC], high=[configs.MAX_ANG, configs.MAX_ACC], size=(self.act_dim,))
             else:
                 # exploit: action from actor
@@ -168,11 +168,11 @@ class TD3Agent:
             # update actor network
             act = self.actor(batch_obs)
             actor_loss = -self.critic_1(batch_obs, act).mean()
-            if not configs.CLAMP:
-                # add l2 penalty for abs(action) - max_action
-                max_action = torch.tensor([configs.MAX_ANG, configs.MAX_ACC], device=self.device).unsqueeze(0)
-                l2_penalty = ((act.abs() - max_action) ** 2).mean()
-                actor_loss += 1e-3 * l2_penalty
+
+            # add l2 penalty for abs(action) - max_action
+            max_action = torch.tensor([configs.MAX_ANG, configs.MAX_ACC], device=self.device).unsqueeze(0)
+            l2_penalty = ((act.abs() - max_action) ** 2).mean()
+            actor_loss += 1e-3 * l2_penalty
 
             self.actor_optimizer.zero_grad()
             actor_loss.backward()
@@ -199,7 +199,7 @@ class TD3Agent:
             self.epsilon = max(self.epsilon, self.epsilon_min)
     
     def get_noise_std(self, step):
-        frac = min((step/(configs.G_STEPS * 0.8)), 1.0)
+        frac = min((step/(configs.G_STEPS * 0.85)), 1.0)
         return self.explore_noise_std - (self.explore_noise_std - self.explore_noise_min) * frac
     
     def save_checkpoint(self, path):

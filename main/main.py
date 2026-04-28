@@ -20,10 +20,10 @@ def eval_loop(env, agent, prefix):
         ckpt = "clamped_" + ckpt
         eval_log_path = "clamped_" + eval_log_path
     if prefix != "":
-        ckpt = prefix + "-" + ckpt
-        eval_log_path = prefix + "-" + eval_log_path
+        ckpt = prefix + "_" + ckpt
+        eval_log_path = prefix + "_" + eval_log_path
     
-    ckpt = ckpt_dir + "/" + ckpt
+    # ckpt = ckpt_dir + "/" + ckpt
     eval_log_path = logs_dir + "/" + eval_log_path
     agent.load_checkpoint(ckpt)
     for ep in range(500): # run 500 evaluation episodes
@@ -84,9 +84,9 @@ def main():
         print("Using discrete action space.")
     assert not (configs.DISCRETE and configs.CLAMP), "Cannot both clamp and use discrete spaces."
     if args.exp_name != "":
-        save_path = args.exp_name + "-" + save_path
-        step_log_path = args.exp_name + "-" + step_log_path
-        eps_log_path = args.exp_name + "-" + eps_log_path
+        save_path = args.exp_name + "_" + save_path
+        step_log_path = args.exp_name + "_" + step_log_path
+        eps_log_path = args.exp_name + "_" + eps_log_path
         print(f"Files will be saved to:\n\tCheckpoint: {save_path}\n\tStep log: {step_log_path}\n\tEpisode log: {eps_log_path}")
     if args.eval:
         configs.EVAL = True
