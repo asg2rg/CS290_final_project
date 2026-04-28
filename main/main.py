@@ -57,6 +57,7 @@ def main():
     save_path = "td3_checkpoint.pth"
     step_log_path = "td3_training_log.csv" # log losses over steps
     eps_log_path = "td3_episode_log.csv" #log rewards, dicounted rewards, and steps per episode
+    eps_since_last_save = 0
 
     parser = argparse.ArgumentParser(description="Train TD3 agent in CarAndTargetEnv")
     parser.add_argument('--render', action='store_true', help='Render the environment')
@@ -106,58 +107,69 @@ def main():
 
     step = 0
     episode_cnt = 0
-    while step < (configs.G_STEPS):
-        obs, info = env.reset()
-        agent.init_hists()
-        agent._add_obs_history(obs)
-        episode_reward = 0.0
-        eps_disc_reward = 0.0
-        done = False
-        ep_step = 0
+    try:    
+        while step < (configs.G_STEPS):
+            obs, info = env.reset()
+            agent.init_hists()
+            agent._add_obs_history(obs)
+            episode_reward = 0.0
+            eps_disc_reward = 0.0
+            done = False
+            ep_step = 0
 
-        while not done:
-            # interaction loop
-            obs_t = agent.parse_obs()
-            action = agent.make_decision(obs_t, step)
-            r_obs = agent.build_replay_frame()
-            # agent.decay_epsilon(step)
-            next_obs, reward, terminated, truncated, info = env.step(action)
-            agent.update_hists(next_obs, action)
-            done = terminated or truncated
-            r_n_obs = agent.build_replay_frame()
-            agent.add_transition(r_obs, action, reward, r_n_obs, done) # internally advances histories
+            while not done:
+                # interaction loop
+                obs_t = agent.parse_obs()
+                action = agent.make_decision(obs_t, step)
+                r_obs = agent.build_replay_frame()
+                # agent.decay_epsilon(step)
+                next_obs, reward, terminated, truncated, info = env.step(action)
+                agent.update_hists(next_obs, action)
+                done = terminated or truncated
+                r_n_obs = agent.build_replay_frame()
+                agent.add_transition(r_obs, action, reward, r_n_obs, done) # internally advances histories
 
-            # logging
-            episode_reward += reward
-            eps_disc_reward += (configs.DISCOUNT ** ep_step) * reward
-            step += 1
-            ep_step += 1
+                # logging
+                episode_reward += reward
+                eps_disc_reward += (configs.DISCOUNT ** ep_step) * reward
+                step += 1
+                ep_step += 1
 
-            # training loop
-            loss_dict = agent.train(step)
+                # training loop
+                loss_dict = agent.train(step)
 
-            # log losses every 1000 steps
-            if step % 1000 == 1 and loss_dict is not None:
-                with open(step_log_path, mode='a', newline='') as step_log_file:
-                    step_writer = csv.writer(step_log_file)
-                    if step_log_file.tell() == 0: # write header if file is new
-                        step_writer.writerow(['step', 'actor_loss', 'critic_1_loss', 'critic_2_loss', 'noise_std'])
-                    step_writer.writerow([step, loss_dict['actor_loss'], loss_dict['critic_1_loss'], loss_dict['critic_2_loss'], loss_dict['noise_std']])
-        
-        # log episode reward and discounted reward
-        dist_traveled = info["car_x"] - 100
-        with open(eps_log_path, mode='a', newline='') as eps_log_file:
-            eps_writer = csv.writer(eps_log_file)
-            if eps_log_file.tell() == 0: # write header if file is new
-                eps_writer.writerow(['episode', 'reward', 'discounted_reward', 'steps', 'distance_traveled'])
-            eps_writer.writerow([episode_cnt, episode_reward, eps_disc_reward, ep_step, dist_traveled])
+                # log losses every 5000 steps
+                if step % 2500 == 1 and loss_dict is not None:
+                    with open(step_log_path, mode='a', newline='') as step_log_file:
+                        step_writer = csv.writer(step_log_file)
+                        if step_log_file.tell() == 0: # write header if file is new
+                            step_writer.writerow(['step', 'actor_loss', 'critic_1_loss', 'critic_2_loss', 'noise_std'])
+                        step_writer.writerow([step, loss_dict['actor_loss'], loss_dict['critic_1_loss'], loss_dict['critic_2_loss'], loss_dict['noise_std']])
 
-        if episode_cnt % 50 == 0:
-            print(f"Episode {episode_cnt} reward: {episode_reward}")
-        episode_cnt += 1
+            if episode_cnt % 10 == 0:
+                print(f"Episode {episode_cnt} reward: {episode_reward}")
+                # log episode reward and discounted reward
+                dist_traveled = info["car_x"] - 100
+                with open(eps_log_path, mode='a', newline='') as eps_log_file:
+                    eps_writer = csv.writer(eps_log_file)
+                    if eps_log_file.tell() == 0: # write header if file is new
+                        eps_writer.writerow(['episode', 'steps', 'reward', 'discounted_reward', 'steps', 'distance_traveled'])
+                    eps_writer.writerow([episode_cnt, step, episode_reward, eps_disc_reward, ep_step, dist_traveled])
+            episode_cnt += 1
+            eps_since_last_save += 1
+            if ep_step == env.max_episode_steps:
+                if eps_since_last_save >= 30:
+                    agent.save_checkpoint(save_path)
+                    print(f"Checkpoint saved to {save_path}.")
+                    eps_since_last_save = 0
 
-    env.close()
-    agent.save_checkpoint(save_path)
+        env.close()
+        agent.save_checkpoint(save_path)
+    except KeyboardInterrupt:
+        print("Training interrupted. Saving checkpoint...")
+        agent.save_checkpoint(save_path)
+        print(f"Checkpoint saved to {save_path}. Exiting.")
+        env.close()
 
 if __name__ == "__main__":
     main()

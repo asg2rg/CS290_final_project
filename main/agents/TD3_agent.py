@@ -199,7 +199,7 @@ class TD3Agent:
             self.epsilon = max(self.epsilon, self.epsilon_min)
     
     def get_noise_std(self, step):
-        frac = min((step/(configs.G_STEPS * 0.85)), 1.0)
+        frac = min((step/(configs.G_STEPS * 0.9)), 1.0)
         return self.explore_noise_std - (self.explore_noise_std - self.explore_noise_min) * frac
     
     def save_checkpoint(self, path):
