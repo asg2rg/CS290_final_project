@@ -2,6 +2,7 @@ import gymnasium as gym
 from gymnasium import spaces
 import pygame
 import numpy as np
+from gymnasium_env.envs.agent_car import AgentCar
 
 import utils.configs as configs
 
@@ -46,13 +47,12 @@ class CarAndTargetEnv(gym.Env):
 
         # car info
         self.car = np.array([100.0, 100.0, 0.0], dtype=np.float32) # car init x at 100
-        self.agent_1 = np.array([440.0, 400.0, np.pi], dtype=np.float32)
+        self.agent_1 = AgentCar(x=440.0, y=400.0, heading=np.pi, speed=agent_1_velocity)
         self.last_x = 100.0
         self.last_lane = 2
 
         # speeds
         self.car_speed = car_velocity
-        self.agent_1_speed = agent_1_velocity
         self.max_speed = configs.MAX_SPEED
         self.min_speed = configs.MIN_SPEED
         self.omega = configs.TURN_UNIT
@@ -78,10 +78,10 @@ class CarAndTargetEnv(gym.Env):
 
     def _get_obs(self):
         car_road_id = self.y_to_road_id(self.car[1])
-        agent_1_road_id = self.y_to_road_id(self.agent_1[1])
+        agent_1_road_id = self.y_to_road_id(self.agent_1.state[1])
 
-        dx = self.agent_1[0] - self.car[0]
-        dy = self.agent_1[1] - self.car[1]
+        dx = self.agent_1.state[0] - self.car[0]
+        dy = self.agent_1.state[1] - self.car[1]
         rel_dist = np.sqrt(dx**2+dy**2)
         rel_angle = np.arctan2(dy, dx)
         heading_error = rel_angle - self.car[2]
@@ -89,14 +89,14 @@ class CarAndTargetEnv(gym.Env):
             heading_error -= 2 * np.pi
         while heading_error < -np.pi:
             heading_error += 2 * np.pi
-        return np.array([car_road_id, self.car_speed, self.car[2], agent_1_road_id, self.agent_1_speed, self.agent_1[2], rel_dist, heading_error], dtype=np.float32)
+        return np.array([car_road_id, self.car_speed, self.car[2], agent_1_road_id, self.agent_1.speed, self.agent_1.state[2], rel_dist, heading_error], dtype=np.float32)
 
     def _get_info(self):
         return {
             "car_x": self.car[0],
             "car_road": self.y_to_road_id(self.car[1]),
-            "agent_1_x": self.agent_1[0],
-            "agent_1_road": self.y_to_road_id(self.agent_1[1])
+            "agent_1_x": self.agent_1.state[0],
+            "agent_1_road": self.y_to_road_id(self.agent_1.state[1])
         }
 
     def reset(self, seed=None, options=None):
@@ -111,10 +111,8 @@ class CarAndTargetEnv(gym.Env):
         self.last_lane = self.y_to_road_id(self.car[1])
         self.car_speed = car_velocity
 
-        self.agent_1[0] = 940.0
-        self.agent_1[1] = self.road_center_y(1)
-        self.agent_1[2] = np.pi
-        self.agent_1_speed = agent_1_velocity
+        self.agent_1.reset(x=940.0, y=self.road_center_y(1), heading=np.pi, speed=agent_1_velocity)
+
 
         if self.render_mode == "human":
             self._render_frame()
@@ -243,9 +241,9 @@ class CarAndTargetEnv(gym.Env):
             self.rotate_point(-x_zone, -y_zone, car_yaw)
         ]) + np.array([car_x, car_y])
 
-        agent_1_x = self.agent_1[0]
-        agent_1_y = self.agent_1[1]
-        agent_1_yaw = self.agent_1[2]
+        agent_1_x = self.agent_1.state[0]
+        agent_1_y = self.agent_1.state[1]
+        agent_1_yaw = self.agent_1.state[2]
         agent_1_corners = np.array([
             self.rotate_point(x_zone, -y_zone, agent_1_yaw),
             self.rotate_point(x_zone, y_zone, agent_1_yaw),
@@ -345,9 +343,8 @@ class CarAndTargetEnv(gym.Env):
         # print(f"Car position: ({self.car[0]:.2f}, {self.car[1]:.2f}), speed: {self.car_speed:.2f}, heading: {np.degrees(self.car[2]):.2f} degrees")
 
         # update agent_1 position
-        self.agent_1[0] += self.agent_1_speed * dt * np.cos(self.agent_1[2])
-        self.agent_1[1] += self.agent_1_speed * dt * np.sin(self.agent_1[2])
-        self.respawn_agent_if_offscreen()
+        self.agent_1.step(dt)
+        self.respawn_agent_if_offscreen(self.y_to_road_id(self.car[1]))
 
         reward = self.reward_calc(turn_delta, acc_delta)
         truncated = self.step_count >= self.max_episode_steps
@@ -365,15 +362,14 @@ class CarAndTargetEnv(gym.Env):
 
         return self._get_obs(), reward, terminated, truncated, self._get_info()
 
-    def respawn_agent_if_offscreen(self):
-        agent_screen_x = self.world_to_screen_x(self.agent_1[0])
+    def respawn_agent_if_offscreen(self, road_id=1):
+        agent_screen_x = self.world_to_screen_x(self.agent_1.state[0])
 
         if agent_screen_x < -self.car_length:
-            self.agent_1[0] = self.car[0] + (self.window_width - self.camera_x) + 100
-            self.agent_1[1] = self.road_center_y(1)
-            self.agent_1[2] = np.pi
-            self.agent_1_speed = agent_1_velocity
-            
+            self.agent_1.reset(x=self.car[0] + (self.window_width - self.camera_x) + 100, y=self.road_center_y(road_id), heading=0, speed=agent_1_velocity)
+        agent_screen_x = self.world_to_screen_x(self.agent_1.state[0])
+
+
     # AI generated for rendering code
     def world_to_screen_x(self, world_x):
         return int(world_x - self.car[0] + self.camera_x)
@@ -471,7 +467,7 @@ class CarAndTargetEnv(gym.Env):
 
         # car and agent_1 car
         self.draw_vehicle(canvas, self.car[0], self.car[1], self.car[2], (50, 150, 255))
-        self.draw_vehicle(canvas, self.agent_1[0], self.agent_1[1], self.agent_1[2], (20, 20, 20))
+        self.draw_vehicle(canvas, self.agent_1.state[0], self.agent_1.state[1], self.agent_1.state[2], (20, 20, 20))
 
         # HUD in the upper-left corner
         hud_x = 16
