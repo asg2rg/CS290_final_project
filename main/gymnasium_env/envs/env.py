@@ -181,7 +181,7 @@ class CarAndTargetEnv(gym.Env):
         lane = self.y_to_road_id(self.car[1])
         # penalize lane switching
         if lane != self.last_lane:
-            lane_change_rwd = -0.5
+            lane_change_rwd = -0.2#5
             reward += lane_change_rwd
             # print(f"Lane change penalty: {lane_change_rwd}")
             self.last_lane = lane
@@ -190,10 +190,14 @@ class CarAndTargetEnv(gym.Env):
             lane_rwd = 3.0
             reward += lane_rwd
         elif (configs.TARGET_LANE in [2, 3] and lane in [2, 3]) or (configs.TARGET_LANE in [0, 1] and lane in [0, 1]):
-            reward += 0.0#0.7
+            reward += -0.3#0.7
         else:
             # wrong side of road or off road
             reward += -1.0
+        # penalize far from road center
+        dist_to_lane_center = abs(self.car[1] - self.road_center_y(lane)) # range 0~40
+        dist_center_rwd = 0.15-(dist_to_lane_center * 0.005) # 0~-0.1
+        reward += dist_center_rwd
             
         #### JERKING PENALTIES ####
         # penalize yaw
