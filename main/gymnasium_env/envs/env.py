@@ -10,7 +10,7 @@ dt = configs.TIMESTEP
 car_velocity = configs.CAR_INITIAL_VEL
 agent_1_velocity = configs.AGENT_1_INITIAL_VEL
 
-MIN_RWD = -350.0
+MIN_RWD = -500.0
 
 class CarAndTargetEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 10}
@@ -127,7 +127,7 @@ class CarAndTargetEnv(gym.Env):
         #### PENALTIES ####
         # collision penalty
         if self.collision_check():
-            col_rwd = -10.0
+            col_rwd = -7.0
             reward += col_rwd
         # OOB penalty
         if self.boundary_check():
@@ -176,24 +176,25 @@ class CarAndTargetEnv(gym.Env):
             reward += 0.2
         speed_rwd = max(2.5 - speed_diff * 0.5, 0.0)
         reward += speed_rwd
-        # reward being in right lane
+
+        # lane control
         lane = self.y_to_road_id(self.car[1])
+        # penalize lane switching
         if lane != self.last_lane:
             lane_change_rwd = -0.5
             reward += lane_change_rwd
             # print(f"Lane change penalty: {lane_change_rwd}")
             self.last_lane = lane
-        if lane == -1:
-            lane_rwd = -2.0
-            reward += lane_rwd
-            # print(f"Off-road penalty: {lane_rwd}")
+        # reward being in right lane
         if lane == configs.TARGET_LANE:
-            lane_rwd = 2.0
+            lane_rwd = 3.0
             reward += lane_rwd
+        elif (configs.TARGET_LANE in [2, 3] and lane in [2, 3]) or (configs.TARGET_LANE in [0, 1] and lane in [0, 1]):
+            reward += 0.0#0.7
         else:
-            reward -= 0.5
-            # print(f"Lane reward: {lane_rwd}")
-        
+            # wrong side of road or off road
+            reward += -1.0
+            
         #### JERKING PENALTIES ####
         # penalize yaw
         if yaw_deg > 7.0:

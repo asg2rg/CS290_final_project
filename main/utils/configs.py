@@ -12,8 +12,8 @@ ROAD_W = 80
 ROAD_L = 5000
 ROAD_TOP = 90
     # car
-CAR_L = 40
-CAR_W = 24
+CAR_L = 40 * 2
+CAR_W = 24 * 2
 
 # env setup
 DISCRETE = False
@@ -59,7 +59,7 @@ acc_cmds = {
         }
 
 # model
-EXPLORE_NOISE_STD = 0.3
+EXPLORE_NOISE_STD = 0.35
 EXPLORE_NOISE_MIN = 0.05
 
 G_STEPS = 2_500_000
@@ -69,7 +69,7 @@ EPS_START = 1.0
 EPS_MIN = 0.05
 EPS_DECAY = 0.9957
 
-DISCOUNT = 0.99
+DISCOUNT = 0.98
 BATCH_SIZE = 1024
 
 def verify_setup(dec = EPS_DECAY):

@@ -33,6 +33,10 @@ class TD3Agent:
         self._update_target_networks(tau=1.0)  # hard update at initialization
         self.replay_buffer = ReplayBuffer(capacity=500000)
 
+        self.action_low = np.array([-configs.MAX_ANG, -configs.MAX_ACC], dtype=np.float32)
+        self.action_high = np.array([configs.MAX_ANG, configs.MAX_ACC], dtype=np.float32)
+        self.action_scale = np.array([configs.MAX_ANG, configs.MAX_ACC], dtype=np.float32)
+
         # histories
         self.obs_history = [] # list of np arrays, each of shape (obs_dim,)
         self.act_history = [] # list of np arrays, each of shape (action_dim,)
@@ -108,15 +112,16 @@ class TD3Agent:
             # explore: random action
         if not configs.DISCRETE:
             if step < configs.G_STEPS*0.05:
-                action = np.random.uniform(low=[-configs.MAX_ANG, -configs.MAX_ACC], high=[configs.MAX_ANG, configs.MAX_ACC], size=(self.act_dim,))
+                action = np.random.uniform(low=self.action_low, high=self.action_high, size=(self.act_dim,)).astype(np.float32)
             else:
                 # exploit: action from actor
                 with torch.no_grad():
                     action = self.actor(obs_t).squeeze(0).cpu().numpy()
                 # exploration noise
-                noise = np.random.normal(0, self.get_noise_std(step), size=action.shape)
+                noise_std = self.get_noise_std(step) * self.action_scale
+                noise = np.random.normal(0.0, noise_std, size=action.shape).astype(np.float32)
                 if configs.CLAMP:
-                    action = (action + noise).clip([-configs.MAX_ANG, -configs.MAX_ACC], [configs.MAX_ANG, configs.MAX_ACC])
+                    action = (action + noise).clip(self.action_low, self.action_high)
                 else:
                     action = action + noise
             return action
@@ -136,10 +141,13 @@ class TD3Agent:
         batch_obs, batch_actions, batch_rewards, batch_next_obs, batch_dones = self.replay_buffer.sample(configs.BATCH_SIZE, device=self.device)
         # compute target Q value
         with torch.no_grad():
-            noise = (torch.randn_like(batch_actions) * self.noise_std).clamp(-self.noise_clip, self.noise_clip).to(self.device)
+            target_noise_std = torch.tensor(self.action_scale * self.noise_std, device=self.device)
+            target_noise_clip = torch.tensor(self.action_scale * self.noise_clip, device=self.device)
+            noise = torch.randn_like(batch_actions) * target_noise_std
+            noise = torch.max(torch.min(noise, target_noise_clip), -target_noise_clip)
             next_actions = self.actor_target(batch_next_obs) + noise
-            low = torch.tensor([-configs.MAX_ANG, -configs.MAX_ACC], device=self.device).unsqueeze(0)
-            high = torch.tensor([configs.MAX_ANG, configs.MAX_ACC], device=self.device).unsqueeze(0)
+            low = torch.tensor(self.action_low, device=self.device).unsqueeze(0)
+            high = torch.tensor(self.action_high, device=self.device).unsqueeze(0)
             next_actions = torch.max(torch.min(next_actions, high), low)
             target_q1 = self.critic_1_target(batch_next_obs, next_actions)
             target_q2 = self.critic_2_target(batch_next_obs, next_actions)
@@ -170,7 +178,7 @@ class TD3Agent:
             actor_loss = -self.critic_1(batch_obs, act).mean()
 
             # add l2 penalty for abs(action) - max_action
-            max_action = torch.tensor([configs.MAX_ANG, configs.MAX_ACC], device=self.device).unsqueeze(0)
+            max_action = torch.tensor(self.action_high, device=self.device).unsqueeze(0)
             l2_penalty = ((act.abs() - max_action) ** 2).mean()
             actor_loss += 1e-3 * l2_penalty
 

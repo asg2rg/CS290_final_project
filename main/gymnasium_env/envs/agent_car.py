@@ -15,6 +15,7 @@ class AgentCar:
         self.state[2] = heading # yaw
         self.heading = heading
         self.speed = speed
+        self.brains.steps = 0
     
     def update_state(self, turn_cmd, acc_cmd):
         self.heading += turn_cmd
