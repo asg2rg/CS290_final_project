@@ -2,7 +2,7 @@ import gymnasium as gym
 from gymnasium import spaces
 import pygame
 import numpy as np
-from gymnasium_env.envs.agent_car import AgentCar
+from agents.agent_car import AgentCar
 
 import utils.configs as configs
 
@@ -76,6 +76,7 @@ class CarAndTargetEnv(gym.Env):
         road_id = int((y - self.road_top) // self.road_width)
         return int(np.clip(road_id, 0, self.num_roads - 1))
 
+    # observation space for the car
     def _get_obs(self):
         car_road_id = self.y_to_road_id(self.car[1])
         agent_1_road_id = self.y_to_road_id(self.agent_1.state[1])
@@ -90,6 +91,38 @@ class CarAndTargetEnv(gym.Env):
         while heading_error < -np.pi:
             heading_error += 2 * np.pi
         return np.array([car_road_id, self.car_speed, self.car[2], agent_1_road_id, self.agent_1.speed, self.agent_1.state[2], rel_dist, heading_error], dtype=np.float32)
+
+    # observation space for agent_1
+    def _get_agent_1_obs(self):
+        car_road_id = self.y_to_road_id(self.car[1])
+        agent_1_road_id = self.y_to_road_id(self.agent_1.state[1])
+
+        dx = self.agent_1.state[0] - self.car[0]
+        dy = self.agent_1.state[1] - self.car[1]
+        rel_angle = np.arctan2(dy, dx)
+        heading_error = rel_angle - self.agent_1.state[2]
+        while heading_error > np.pi:
+            heading_error -= 2 * np.pi
+        while heading_error < -np.pi:
+            heading_error += 2 * np.pi
+
+        lane_2_error = self.road_center_y(2) - self.agent_1.state[1]
+        lane_3_error = self.road_center_y(3) - self.agent_1.state[1]
+        return np.array([
+            car_road_id, 
+            self.car_speed,
+            self.car[2], 
+            agent_1_road_id, 
+            self.agent_1.speed, 
+            self.agent_1.state[2], 
+            dx, 
+            dy, 
+            heading_error, 
+            self.agent_1.state[1],
+            lane_2_error,
+            lane_3_error
+            ], dtype=np.float32)
+
 
     def _get_info(self):
         return {
@@ -111,8 +144,8 @@ class CarAndTargetEnv(gym.Env):
         self.last_lane = self.y_to_road_id(self.car[1])
         self.car_speed = car_velocity
 
-        self.agent_1.reset(x=940.0, y=self.road_center_y(1), heading=np.pi, speed=agent_1_velocity)
-
+        self.agent_1.reset(x=900.0, y=self.road_center_y(3), heading=0, speed=agent_1_velocity)
+    
 
         if self.render_mode == "human":
             self._render_frame()
@@ -362,7 +395,7 @@ class CarAndTargetEnv(gym.Env):
         # TODO: agent_1 make decision with obs
         # TODO: 1) build agent obs
         # TODO: 2) set agent action internally
-        agent_obs = None # TODO
+        agent_obs = self._get_agent_1_obs() 
         self.agent_1.step(dt, agent_obs) # update with internal state
         self.respawn_agent_if_offscreen(self.y_to_road_id(self.car[1]))
 
