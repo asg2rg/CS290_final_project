@@ -106,8 +106,11 @@ class CarAndTargetEnv(gym.Env):
         while heading_error < -np.pi:
             heading_error += 2 * np.pi
 
+        lane_0_error = self.road_center_y(0) - self.agent_1.state[1]
+        lane_1_error = self.road_center_y(1) - self.agent_1.state[1]
         lane_2_error = self.road_center_y(2) - self.agent_1.state[1]
         lane_3_error = self.road_center_y(3) - self.agent_1.state[1]
+
         return np.array([
             car_road_id, 
             self.car_speed,
@@ -118,7 +121,8 @@ class CarAndTargetEnv(gym.Env):
             dx, 
             dy, 
             heading_error, 
-            self.agent_1.state[1],
+            lane_0_error,
+            lane_1_error,
             lane_2_error,
             lane_3_error
             ], dtype=np.float32)

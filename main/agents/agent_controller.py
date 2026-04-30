@@ -19,16 +19,14 @@ class AgentController:
 
     def make_decision(self, obs):
         self.steps += 1
-        car_lane = obs[0]
-        agent_lane = obs[3]
+        car_lane = int(obs[0])
+        agent_lane = int(obs[3])
         car_speed = obs[1]
         agent_speed = obs[4]
         agent_heading = obs[5]
         dx = obs[6]
-        agent_y = obs[9]
-        lane_2_error = obs[10]
-        lane_3_error = obs[11]
-
+        lane_error = obs[9:13]
+        target_lane_error = None
 
         if self.real_init:
             # Process obs and get action from actor
@@ -38,22 +36,13 @@ class AgentController:
         else:
             turn_cmd = 0.0
             acc_cmd = 0.0
-            # detect for lane change every 20 steps
-            if (not self.lane_change_active) and (car_lane != agent_lane) and (self.steps % 20 == 0):
+            # detect for lane change every 100 steps
+            if (not self.lane_change_active) and (car_lane != agent_lane) and (self.steps % 100 == 0):
                 self.lane_change_active = True
-
-                # Choose lane 2 or lane 3
-                if agent_lane == 2:
-                    self.target_lane = 3
-                else:
-                    self.target_lane = 2
-
+                self.target_lane = car_lane
             # move to the chosen lane
             if self.lane_change_active:
-                if self.target_lane == 2:
-                    target_lane_error = lane_2_error
-                else:
-                    target_lane_error = lane_3_error
+                target_lane_error = lane_error[self.target_lane]
 
                 lane_tolerance = 5.0
                 heading_tolerance = 0.03
