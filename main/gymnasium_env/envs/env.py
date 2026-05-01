@@ -165,7 +165,7 @@ class CarAndTargetEnv(gym.Env):
         #### PENALTIES ####
         # collision penalty
         if self.collision_check():
-            col_rwd = -7.0
+            col_rwd = -3.0
             reward += col_rwd
         # OOB penalty
         if self.boundary_check():
@@ -173,11 +173,11 @@ class CarAndTargetEnv(gym.Env):
             reward += oob_rwd
         # large penalty for yaw > 70 degrees
         if yaw_deg > 90.0:
-            yaw_rwd = -3.0
+            yaw_rwd = -5.0
             reward += yaw_rwd
             # print(f"Reversed penalty: {yaw_rwd}")
-        elif yaw_deg > 70.0:
-            yaw_rwd = -2.0
+        elif yaw_deg > 6.0:
+            yaw_rwd = -3.0
             reward += yaw_rwd
             # print(f"Large yaw penalty: {yaw_rwd}")
         elif yaw_deg > 30.0:
@@ -219,7 +219,7 @@ class CarAndTargetEnv(gym.Env):
         lane = self.y_to_road_id(self.car[1])
         # penalize lane switching
         if lane != self.last_lane:
-            lane_change_rwd = -0.2#5
+            lane_change_rwd = -0.3#5
             reward += lane_change_rwd
             # print(f"Lane change penalty: {lane_change_rwd}")
             self.last_lane = lane
@@ -228,15 +228,15 @@ class CarAndTargetEnv(gym.Env):
             lane_rwd = 3.0
             reward += lane_rwd
         elif (configs.TARGET_LANE in [2, 3] and lane in [2, 3]) or (configs.TARGET_LANE in [0, 1] and lane in [0, 1]):
-            reward += -0.3#0.7
+            reward += -0.0#0.7
         else:
             # wrong side of road or off road
             reward += -1.0
         # penalize far from road center
         dist_to_lane_center = abs(self.car[1] - self.road_center_y(lane)) # range 0~40
-        dist_center_rwd = 0.15-((dist_to_lane_center**2 / 20) * 0.005) # 0~-0.1
+        dist_center_rwd = 0.3-((dist_to_lane_center**2 / 10) * 0.005)
         reward += dist_center_rwd
-        print(dist_center_rwd)
+        # print(dist_center_rwd)
             
         #### JERKING PENALTIES ####
         # penalize yaw
@@ -388,9 +388,9 @@ class CarAndTargetEnv(gym.Env):
             alpha += 2*np.pi
         
         # move forward
-        if self.collision_check():
-            speed *= 0.05
-            alpha *= -0.5
+        # if self.collision_check():
+            # speed *= 0.05
+            # alpha *= -0.5
         self.car[0] += dt * speed * np.cos(alpha)
         self.car[1] += dt * speed * np.sin(alpha)
         self.car[2] = alpha
