@@ -17,14 +17,18 @@ class AgentCar:
         self.speed = speed
         self.brains.steps = 0
     
-    def update_state(self, turn_cmd, acc_cmd):
-        self.heading += turn_cmd
+    def update_state(self, turn_cmd, acc_cmd, dt):
+        self.heading += dt * turn_cmd * configs.TURN_UNIT
+        if self.heading > np.pi:
+            self.heading -= 2 * np.pi
+        if self.heading < -np.pi:
+            self.heading += 2 * np.pi
         self.speed += acc_cmd
         self.speed = np.clip(self.speed, configs.MIN_SPEED, configs.MAX_SPEED)
 
     def step(self, dt, obs):
         turn_cmd, acc_cmd = self.brains.make_decision(obs)
-        self.update_state(turn_cmd, acc_cmd)
+        self.update_state(turn_cmd, acc_cmd, dt)
         self.state[0] += self.speed * dt * np.cos(self.heading)
         self.state[1] += self.speed * dt * np.sin(self.heading)
         self.state[2] = self.heading
