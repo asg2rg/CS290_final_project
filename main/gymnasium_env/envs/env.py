@@ -109,6 +109,7 @@ class CarAndTargetEnv(gym.Env):
         self.car[1] = self.road_center_y(2)
         self.car[2] = 0.0
         self.last_lane = self.y_to_road_id(self.car[1])
+        configs.TARGET_LANE = np.random.choice([2, 3])
         self.car_speed = car_velocity
 
         self.agent_1.reset(x=940.0, y=self.road_center_y(1), heading=np.pi, speed=agent_1_velocity)
@@ -196,8 +197,9 @@ class CarAndTargetEnv(gym.Env):
             reward += -1.0
         # penalize far from road center
         dist_to_lane_center = abs(self.car[1] - self.road_center_y(lane)) # range 0~40
-        dist_center_rwd = 0.15-(dist_to_lane_center * 0.005) # 0~-0.1
+        dist_center_rwd = 0.15-((dist_to_lane_center**2 / 20) * 0.005) # 0~-0.1
         reward += dist_center_rwd
+        print(dist_center_rwd)
             
         #### JERKING PENALTIES ####
         # penalize yaw
