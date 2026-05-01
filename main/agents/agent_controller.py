@@ -15,6 +15,7 @@ class AgentController:
         self.steps = 0
         self.target_lane = None
         self.lane_change_active = False
+        self.target_speed = configs.CAR_INITIAL_VEL
         self.speed_change_active = False
         self.target_lane_center_y = None
 
@@ -85,25 +86,25 @@ class AgentController:
                     irrational_probs = np.random.rand()
                     if dx > 0: # agent ahead
                         if irrational_probs < 0.1:
-                            target_speed = configs.TARGET_SPEED + 20.0 # speed up even if ahead
+                            self.target_speed = configs.TARGET_SPEED + 20.0 # speed up even if ahead
                         else:
-                            target_speed = configs.TARGET_SPEED - 20.0
+                            self.target_speed = configs.TARGET_SPEED - 20.0
                     else: # agent behind
                         if irrational_probs < 0.1:
-                            target_speed = configs.TARGET_SPEED - 20.0 # slow dodwn even if behind
+                            self.target_speed = configs.TARGET_SPEED - 20.0 # slow dodwn even if behind
                         else:
-                            target_speed = configs.TARGET_SPEED + 10.0
+                            self.target_speed = configs.TARGET_SPEED + 10.0
                     self.speed_change_active = True
+                    self.target_speed = np.clip(self.target_speed, configs.MIN_SPEED, configs.MAX_SPEED)
             if self.speed_change_active:
-                target_speed = np.clip(target_speed, configs.MIN_SPEED, configs.MAX_SPEED)
-                speed_diff = target_speed - agent_speed
+                speed_diff = self.target_speed - agent_speed
 
                 if speed_diff > configs.MAX_ACC/1.5:
                     acc_cmd = configs.MAX_ACC
-                    # print(f"Accelerating to {target_speed:.1f}")
+                    # print(f"Accelerating to {self.target_speed:.1f}")
                 elif speed_diff < -configs.MAX_ACC/1.5:
                     acc_cmd = -configs.MAX_ACC
-                    # print(f"Braking to {target_speed:.1f}")
+                    # print(f"Braking to {self.target_speed:.1f}")
                 else:
                     acc_cmd = 0.0
                     self.speed_change_active = False
