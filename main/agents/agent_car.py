@@ -16,7 +16,10 @@ class AgentCar:
         self.heading = heading
         self.speed = speed
         self.brains.steps = 0
-    
+        self.brains.lane_change_active = False
+        self.brains.target_lane = None
+        self.brains.target_lane_center_y = None
+
     def update_state(self, turn_cmd, acc_cmd, dt):
         self.heading += dt * turn_cmd * configs.TURN_UNIT
         if self.heading > np.pi:
@@ -26,9 +29,17 @@ class AgentCar:
         self.speed += acc_cmd
         self.speed = np.clip(self.speed, configs.MIN_SPEED, configs.MAX_SPEED)
 
-    def step(self, dt, obs):
-        turn_cmd, acc_cmd = self.brains.make_decision(obs)
-        self.update_state(turn_cmd, acc_cmd, dt)
+    def move(self, dt):
+        if self.brains.just_finished_lane_change:
+            self.heading = 0.0
+            self.state[2] = 0.0
+            self.brains.just_finished_lane_change = False
+
         self.state[0] += self.speed * dt * np.cos(self.heading)
         self.state[1] += self.speed * dt * np.sin(self.heading)
         self.state[2] = self.heading
+
+    def step(self, dt, obs):
+        turn_cmd, acc_cmd = self.brains.make_decision(obs)
+        self.update_state(turn_cmd, acc_cmd, dt)
+        self.move(dt)

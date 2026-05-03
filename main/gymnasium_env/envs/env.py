@@ -9,6 +9,7 @@ import utils.configs as configs
 dt = configs.TIMESTEP
 car_velocity = configs.CAR_INITIAL_VEL
 agent_1_velocity = configs.AGENT_1_INITIAL_VEL
+agent_2_velocity = configs.AGENT_2_INITIAL_VEL
 
 MIN_RWD = -500.0
 
@@ -48,6 +49,10 @@ class CarAndTargetEnv(gym.Env):
         # car info
         self.car = np.array([100.0, 100.0, 0.0], dtype=np.float32) # car init x at 100
         self.agent_1 = AgentCar(x=440.0, y=400.0, heading=np.pi, speed=agent_1_velocity)
+        self.agent_2 = AgentCar(x=440.0, y=200.0, heading=0, speed=agent_2_velocity)
+        
+        self.agents = [self.agent_1, self.agent_2]
+        
         self.last_x = 100.0
         self.last_lane = 2
 
@@ -80,7 +85,7 @@ class CarAndTargetEnv(gym.Env):
     def _get_obs(self):
         car_road_id = self.y_to_road_id(self.car[1])
         agent_1_road_id = self.y_to_road_id(self.agent_1.state[1])
-
+        
         dx = self.agent_1.state[0] - self.car[0]
         dy = self.agent_1.state[1] - self.car[1]
         rel_dist = np.sqrt(dx**2+dy**2)
@@ -93,31 +98,31 @@ class CarAndTargetEnv(gym.Env):
         return np.array([car_road_id, self.car_speed, self.car[2], agent_1_road_id, self.agent_1.speed, self.agent_1.state[2], rel_dist, heading_error], dtype=np.float32)
 
     # observation space for agent_1
-    def _get_agent_1_obs(self):
+    def _get_agent_obs(self, agent=None):
         car_road_id = self.y_to_road_id(self.car[1])
-        agent_1_road_id = self.y_to_road_id(self.agent_1.state[1])
+        agent_road_id = self.y_to_road_id(agent.state[1])
 
-        dx = self.agent_1.state[0] - self.car[0]
-        dy = self.agent_1.state[1] - self.car[1]
+        dx = agent.state[0] - self.car[0]
+        dy = agent.state[1] - self.car[1]
         rel_angle = np.arctan2(dy, dx)
-        heading_error = rel_angle - self.agent_1.state[2]
+        heading_error = rel_angle - agent.state[2]
         while heading_error > np.pi:
             heading_error -= 2 * np.pi
         while heading_error < -np.pi:
             heading_error += 2 * np.pi
 
-        lane_0_error = self.road_center_y(0) - self.agent_1.state[1]
-        lane_1_error = self.road_center_y(1) - self.agent_1.state[1]
-        lane_2_error = self.road_center_y(2) - self.agent_1.state[1]
-        lane_3_error = self.road_center_y(3) - self.agent_1.state[1]
+        lane_0_error = self.road_center_y(0) - agent.state[1]
+        lane_1_error = self.road_center_y(1) - agent.state[1]
+        lane_2_error = self.road_center_y(2) - agent.state[1]
+        lane_3_error = self.road_center_y(3) - agent.state[1]
 
         return np.array([
             car_road_id, 
             self.car_speed,
             self.car[2], 
-            agent_1_road_id, 
-            self.agent_1.speed, 
-            self.agent_1.state[2], 
+            agent_road_id, 
+            agent.speed, 
+            agent.state[2], 
             dx, 
             dy, 
             heading_error, 
@@ -150,7 +155,8 @@ class CarAndTargetEnv(gym.Env):
         self.car_speed = car_velocity
 
         self.agent_1.reset(x=900.0, y=self.road_center_y(3), heading=0, speed=agent_1_velocity)
-    
+        self.agent_2.reset(x=900.0, y=self.road_center_y(2), heading=0, speed=agent_2_velocity)
+
 
         if self.render_mode == "human":
             self._render_frame()
@@ -397,13 +403,15 @@ class CarAndTargetEnv(gym.Env):
 
         # print(f"Car position: ({self.car[0]:.2f}, {self.car[1]:.2f}), speed: {self.car_speed:.2f}, heading: {np.degrees(self.car[2]):.2f} degrees")
 
-        # update agent_1 position
-        # TODO: agent_1 make decision with obs
-        # TODO: 1) build agent obs
-        # TODO: 2) set agent action internally
-        agent_obs = self._get_agent_1_obs() 
-        self.agent_1.step(dt, agent_obs) # update with internal state
-        self.respawn_agent_if_offscreen(self.y_to_road_id(self.car[1]))
+        # update agent positions
+        for agent in self.agents:
+            agent_obs = self._get_agent_obs(agent)
+            turn_cmd, acc_cmd = agent.brains.make_decision(agent_obs)
+            turn_cmd, acc_cmd = self.apply_agent_safety_override(agent, turn_cmd, acc_cmd)
+            agent.update_state(turn_cmd, acc_cmd, dt)
+            agent.move(dt)
+
+            self.respawn_agent_if_offscreen(agent, self.y_to_road_id(self.car[1]))
 
         reward = self.reward_calc(turn_delta, acc_delta)
         truncated = self.step_count >= self.max_episode_steps
@@ -421,12 +429,12 @@ class CarAndTargetEnv(gym.Env):
 
         return self._get_obs(), reward, terminated, truncated, self._get_info()
 
-    def respawn_agent_if_offscreen(self, road_id=1):
-        agent_screen_x = self.world_to_screen_x(self.agent_1.state[0])
+    def respawn_agent_if_offscreen(self, agent, road_id=1):
+        agent_screen_x = self.world_to_screen_x(agent.state[0])
 
         if agent_screen_x < -self.car_length:
-            self.agent_1.reset(x=self.car[0] + (self.window_width - self.camera_x) + 100, y=self.road_center_y(road_id), heading=0, speed=agent_1_velocity)
-        agent_screen_x = self.world_to_screen_x(self.agent_1.state[0])
+            agent.reset(x=self.car[0] + (self.window_width - self.camera_x) + 100, y=self.road_center_y(road_id), heading=0, speed=agent.speed)
+        agent_screen_x = self.world_to_screen_x(agent.state[0])
 
 
     # AI generated for rendering code
@@ -524,9 +532,10 @@ class CarAndTargetEnv(gym.Env):
 
         self.draw_road(canvas)
 
-        # car and agent_1 car
+        # car, agent_1, agent_2
         self.draw_vehicle(canvas, self.car[0], self.car[1], self.car[2], (50, 150, 255))
         self.draw_vehicle(canvas, self.agent_1.state[0], self.agent_1.state[1], self.agent_1.state[2], (20, 20, 20))
+        self.draw_vehicle(canvas, self.agent_2.state[0], self.agent_2.state[1], self.agent_2.state[2], (20, 20, 20))
 
         # HUD in the upper-left corner
         hud_x = 16
@@ -565,3 +574,60 @@ class CarAndTargetEnv(gym.Env):
             pygame.quit()
             self.window = None
             self.clock = None
+
+
+    # Make sure agents do not collide in the same lane
+    def nearest_same_lane_agent_info(self, target_agent):
+        current_lane = self.y_to_road_id(target_agent.state[1])
+
+        nearest_front = None
+        nearest_front_dx = np.inf
+
+        nearest_back = None
+        nearest_back_dx = -np.inf
+
+        for agent in self.agents:
+            if agent is target_agent:
+                continue
+            other_lane = self.y_to_road_id(agent.state[1])
+            if other_lane != current_lane:
+                continue
+
+            # other agent is in front
+            dx = agent.state[0] - target_agent.state[0]
+            if dx > 0 and dx < nearest_front_dx:
+                nearest_front_dx = dx
+                nearest_front = agent
+            # other agent is behind
+            if dx < 0 and dx > nearest_back_dx:
+                nearest_back_dx = dx
+                nearest_back = agent
+
+        return nearest_front, nearest_front_dx, nearest_back, nearest_back_dx
+
+
+    def apply_agent_safety_override(self, agent, turn_cmd, acc_cmd):
+        safe_front_distance = self.car_length * 2.5
+        emergency_front_distance = self.car_length * 1.5
+
+        nearest_front, front_dx, nearest_back, back_dx = self.nearest_same_lane_agent_info(agent)
+
+        safe_turn_cmd = turn_cmd
+        safe_acc_cmd = acc_cmd
+
+        # brake if other agent is too close in front
+        if nearest_front is not None:
+            relative_speed = agent.speed - nearest_front.speed
+
+            if front_dx < emergency_front_distance:
+                safe_acc_cmd = -configs.MAX_ACC
+                safe_turn_cmd = 0.0
+
+                agent.brains.lane_change_active = False
+                agent.brains.target_lane = None
+
+            elif front_dx < safe_front_distance and relative_speed > 0:
+                safe_acc_cmd = -configs.MAX_ACC
+                safe_turn_cmd = 0.0
+
+        return safe_turn_cmd, safe_acc_cmd

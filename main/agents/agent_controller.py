@@ -18,7 +18,8 @@ class AgentController:
         self.target_speed = configs.CAR_INITIAL_VEL
         self.speed_change_active = False
         self.target_lane_center_y = None
-
+        self.just_finished_lane_change = False
+        
     def make_decision(self, obs):
         self.steps += 1
         car_lane = int(obs[0])
@@ -42,7 +43,14 @@ class AgentController:
             if (not self.lane_change_active) and (self.steps % 100 == 0):
                 if (car_lane != agent_lane) or np.random.rand() < 0.3:
                     self.lane_change_active = True
-                    self.target_lane = 3 if agent_lane == 2 else 2
+                    if agent_lane == 2:
+                        self.target_lane = 3
+                    elif agent_lane == 3:
+                        self.target_lane = 2
+                    elif agent_lane == 0:
+                        self.target_lane = 1
+                    else:   
+                        self.target_lane = 0
             # move to the chosen lane
             if self.lane_change_active:
                 # print(f"Changing lane from {agent_lane} to {self.target_lane}")
@@ -74,7 +82,8 @@ class AgentController:
                 if (agent_lane == self.target_lane and abs(target_lane_error) < lane_tolerance and abs(agent_heading) < heading_tolerance):
                     self.lane_change_active = False
                     self.target_lane = None
-
+                    self.just_finished_lane_change = True
+                    
                 return turn_cmd, acc_cmd
 
             # if in the same lane
