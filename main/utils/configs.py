@@ -24,14 +24,21 @@ MAX_SPEED = 100.0
 TURN_UNIT = 1.0
 CLAMP = False
 
-OBS_DIM = 8
+OBS_DIM = 5 # agent lane, speed, yaw, dist, heading error
 ACTION_DIM = 2
 STACK_SZ = 4
-STACK_OBS_DIM = 2 + OBS_DIM * STACK_SZ + ACTION_DIM * (STACK_SZ - 1)
+NEAREST_AGENTS = 4
+BASE_OBS_ELEMENTS = 3  # car info: lane, speed, yaw
+AGENT_OBS_ELEMENTS = OBS_DIM + 1  # 5 dims + 1 exists flag per nearest agent
+OBS_ELEMENTS_PER_TIMESTEP = BASE_OBS_ELEMENTS + AGENT_OBS_ELEMENTS * NEAREST_AGENTS
+STACK_OBS_DIM = 4 + OBS_ELEMENTS_PER_TIMESTEP * STACK_SZ + ACTION_DIM * (STACK_SZ - 1) #target speed, target lane, agent cnt, stacked the rest
 
 TIMESTEP = 0.2
 CAR_INITIAL_VEL = 50.0
 AGENT_1_INITIAL_VEL = 25.0
+AGENT_CNT = 3
+AGENTS_FRONT = 0
+AGENTS_BEHIND = 0
 
 # behavior
 MAX_ANG = 3.0

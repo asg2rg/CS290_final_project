@@ -47,7 +47,10 @@ class CarAndTargetEnv(gym.Env):
 
         # car info
         self.car = np.array([100.0, 100.0, 0.0], dtype=np.float32) # car init x at 100
-        self.agent_1 = AgentCar(x=440.0, y=400.0, heading=np.pi, speed=agent_1_velocity)
+        self.agents = [AgentCar(id = i, x=350.0 + i*100, y=self.road_center_y(i), heading=np.pi, speed=agent_1_velocity) for i in range(configs.AGENT_CNT)]
+        # self.agents[0].heading *= -1
+        # self.agents[1].heading *= -1
+        
         self.last_x = 100.0
         self.last_lane = 2
 
@@ -58,8 +61,18 @@ class CarAndTargetEnv(gym.Env):
         self.omega = configs.TURN_UNIT
 
         # observation:
-        low = np.array([-1, 0.0, -np.pi, -1, 0.0, -np.pi, 0.0, -np.pi], dtype=np.float32)
-        high = np.array([self.num_roads - 1, self.max_speed, np.pi, self.num_roads - 1, self.max_speed, np.pi, np.inf, np.pi], dtype=np.float32)
+        low = np.array(
+            [-1.0, 0.0, -np.pi] + [
+                -1.0, 0.0, -np.pi, 0.0, -np.pi, 0.0
+            ] * configs.NEAREST_AGENTS,
+            dtype=np.float32,
+        )
+        high = np.array(
+            [self.num_roads - 1, self.max_speed, np.pi] + [
+                self.num_roads - 1, self.max_speed, np.pi, np.inf, np.pi, 1.0
+            ] * configs.NEAREST_AGENTS,
+            dtype=np.float32,
+        )
         self.observation_space = spaces.Box(low=low, high=high, dtype=np.float32)
 
         if configs.DISCRETE:
@@ -76,65 +89,108 @@ class CarAndTargetEnv(gym.Env):
         road_id = int((y - self.road_top) // self.road_width)
         return int(np.clip(road_id, 0, self.num_roads - 1))
 
+    def _build_agent_obs(self, target_agent, reference_entity=None):
+        if reference_entity is None:
+            reference_entity = self.car
+        
+        agent_road_id = self.y_to_road_id(target_agent.state[1])
+        dx = target_agent.state[0] - reference_entity[0]
+        dy = target_agent.state[1] - reference_entity[1]
+        rel_dist = np.sqrt(dx**2 + dy**2)
+        rel_angle = np.arctan2(dy, dx)
+        heading_error = rel_angle - target_agent.state[2]
+        while heading_error > np.pi:
+            heading_error -= 2 * np.pi
+        while heading_error < -np.pi:
+            heading_error += 2 * np.pi
+        return [1.0, agent_road_id, target_agent.speed, target_agent.state[2], rel_dist, heading_error]
+
+    def _update_agent_side_counts(self):
+        configs.AGENTS_FRONT = sum(1 for agent in self.agents if agent.state[0] > self.car[0])
+        configs.AGENTS_BEHIND = sum(1 for agent in self.agents if agent.state[0] < self.car[0])
+
+    def _get_reference_agent(self):
+        if not self.agents:
+            return None
+        return min(self.agents, key=lambda agent: (agent.state[0] - self.car[0]) ** 2 + (agent.state[1] - self.car[1]) ** 2)
+
     # observation space for the car
     def _get_obs(self):
         car_road_id = self.y_to_road_id(self.car[1])
-        agent_1_road_id = self.y_to_road_id(self.agent_1.state[1])
+        obs_parts = [car_road_id, self.car_speed, self.car[2]]
 
-        dx = self.agent_1.state[0] - self.car[0]
-        dy = self.agent_1.state[1] - self.car[1]
-        rel_dist = np.sqrt(dx**2+dy**2)
-        rel_angle = np.arctan2(dy, dx)
-        heading_error = rel_angle - self.car[2]
-        while heading_error > np.pi:
-            heading_error -= 2 * np.pi
-        while heading_error < -np.pi:
-            heading_error += 2 * np.pi
-        return np.array([car_road_id, self.car_speed, self.car[2], agent_1_road_id, self.agent_1.speed, self.agent_1.state[2], rel_dist, heading_error], dtype=np.float32)
+        if not self.agents:
+            nearest_indices = []
+        else:
+            agent_distances = []
+            for i, agent in enumerate(self.agents):
+                dx = agent.state[0] - self.car[0]
+                dy = agent.state[1] - self.car[1]
+                dist = np.sqrt(dx**2 + dy**2)
+                agent_distances.append((dist, i))
+            agent_distances.sort()
+            nearest_indices = [i for _, i in agent_distances[:configs.NEAREST_AGENTS]]
 
-    # observation space for agent_1
-    def _get_agent_1_obs(self):
-        car_road_id = self.y_to_road_id(self.car[1])
-        agent_1_road_id = self.y_to_road_id(self.agent_1.state[1])
+        for nearest_idx in nearest_indices:
+            obs_parts.extend(self._build_agent_obs(self.agents[nearest_idx]))
 
-        dx = self.agent_1.state[0] - self.car[0]
-        dy = self.agent_1.state[1] - self.car[1]
-        rel_angle = np.arctan2(dy, dx)
-        heading_error = rel_angle - self.agent_1.state[2]
-        while heading_error > np.pi:
-            heading_error -= 2 * np.pi
-        while heading_error < -np.pi:
-            heading_error += 2 * np.pi
+        for _ in range(configs.NEAREST_AGENTS - len(nearest_indices)):
+            obs_parts.extend([0.0, -1.0, 0.0, 0.0, 0.0, 0.0])
 
-        lane_0_error = self.road_center_y(0) - self.agent_1.state[1]
-        lane_1_error = self.road_center_y(1) - self.agent_1.state[1]
-        lane_2_error = self.road_center_y(2) - self.agent_1.state[1]
-        lane_3_error = self.road_center_y(3) - self.agent_1.state[1]
+        return np.array(obs_parts, dtype=np.float32)
 
-        return np.array([
-            car_road_id, 
-            self.car_speed,
-            self.car[2], 
-            agent_1_road_id, 
-            self.agent_1.speed, 
-            self.agent_1.state[2], 
-            dx, 
-            dy, 
-            heading_error, 
-            lane_0_error,
-            lane_1_error,
-            lane_2_error,
-            lane_3_error
-            ], dtype=np.float32)
+    def _get_nearest_agents(self, agent_idx, k=4):
+        """Get indices of k nearest agents to the given agent (excluding itself)"""
+        agent = self.agents[agent_idx]
+        distances = []
+        for i, other in enumerate(self.agents):
+            if i != agent_idx:
+                dx = other.state[0] - agent.state[0]
+                dy = other.state[1] - agent.state[1]
+                dist = np.sqrt(dx**2 + dy**2)
+                distances.append((dist, i))
+        distances.sort()
+        return [i for _, i in distances[:k]] + [-1] * (k - len(distances))
+
+    def _get_agent_obs(self, agent_idx):
+        """Get observation for agent_idx from that agent's POV: agent's own state + 4 nearest other agents"""
+        agent = self.agents[agent_idx]
+        agent_road_id = self.y_to_road_id(agent.state[1])
+        obs_parts = [agent_road_id, agent.speed, agent.state[2]]
+
+        # get car info
+        car_lane = self.y_to_road_id(self.car[1])
+        car_speed = self.car_speed
+        car_yaw = self.car[2]
+        dx = agent.state[0] - self.car[0]
+        dy = agent.state[1] - self.car[1]
+        lane_err = [self.road_center_y(i) - agent.state[1] for i in range(configs.ROAD_CNT)]
+        obs_parts.extend([car_lane, car_speed, car_yaw, dx, dy] + lane_err)
+
+        nearest_indices = self._get_nearest_agents(agent_idx, configs.NEAREST_AGENTS-1)
+        for nearest_idx in nearest_indices:
+            if nearest_idx >= 0:
+                nearest_agent = self.agents[nearest_idx]
+                obs_parts.extend(self._build_agent_obs(nearest_agent, reference_entity=agent.state))
+            else:
+                obs_parts.extend([0.0, -1.0, 0.0, 0.0, 0.0, 0.0])
+        # print(f"Agent {agent_idx} obs: {obs_parts}")
+        
+        return np.array(obs_parts, dtype=np.float32)
 
 
     def _get_info(self):
-        return {
+        info = {
             "car_x": self.car[0],
             "car_road": self.y_to_road_id(self.car[1]),
-            "agent_1_x": self.agent_1.state[0],
-            "agent_1_road": self.y_to_road_id(self.agent_1.state[1])
+            "agent_count": len(self.agents),
+            "agents_front": configs.AGENTS_FRONT,
+            "agents_behind": configs.AGENTS_BEHIND
         }
+        for i, agent in enumerate(self.agents):
+            info[f"agent_{i}_x"] = agent.state[0]
+            info[f"agent_{i}_road"] = self.y_to_road_id(agent.state[1])
+        return info
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
@@ -149,8 +205,15 @@ class CarAndTargetEnv(gym.Env):
         configs.TARGET_LANE = np.random.choice([2, 3])
         self.car_speed = car_velocity
 
-        self.agent_1.reset(x=900.0, y=self.road_center_y(3), heading=0, speed=agent_1_velocity)
-    
+        for i, agent in enumerate(self.agents):
+            lane = np.random.choice(4)
+            heading = 0
+            if lane in [0, 1]:
+                heading = np.pi
+            x_offset = (np.random.random() - 0.5) * 200
+            spd = agent_1_velocity + (np.random.random() - 0.5) * 10
+            agent.reset(x=400 + (i%4)*200 + x_offset, y=self.road_center_y(lane), heading=heading, speed=spd)
+        self._update_agent_side_counts()
 
         if self.render_mode == "human":
             self._render_frame()
@@ -289,17 +352,19 @@ class CarAndTargetEnv(gym.Env):
             self.rotate_point(-x_zone, -y_zone, car_yaw)
         ]) + np.array([car_x, car_y])
 
-        agent_1_x = self.agent_1.state[0]
-        agent_1_y = self.agent_1.state[1]
-        agent_1_yaw = self.agent_1.state[2]
-        agent_1_corners = np.array([
-            self.rotate_point(x_zone, -y_zone, agent_1_yaw),
-            self.rotate_point(x_zone, y_zone, agent_1_yaw),
-            self.rotate_point(-x_zone, y_zone, agent_1_yaw),
-            self.rotate_point(-x_zone, -y_zone, agent_1_yaw)
-        ]) + np.array([agent_1_x, agent_1_y])
-
-        return self.point_in_rectangle(car_corners, agent_1_corners) or self.point_in_rectangle(agent_1_corners, car_corners)
+        for agent in self.agents:
+            agent_x = agent.state[0]
+            agent_y = agent.state[1]
+            agent_yaw = agent.state[2]
+            agent_corners = np.array([
+                self.rotate_point(x_zone, -y_zone, agent_yaw),
+                self.rotate_point(x_zone, y_zone, agent_yaw),
+                self.rotate_point(-x_zone, y_zone, agent_yaw),
+                self.rotate_point(-x_zone, -y_zone, agent_yaw)
+            ]) + np.array([agent_x, agent_y])
+            if self.point_in_rectangle(car_corners, agent_corners):
+                return True
+        return False
 
     #### Copilot-generated separating axis theorem check ####
     def rectangle_axes(self, corners):
@@ -388,22 +453,22 @@ class CarAndTargetEnv(gym.Env):
             alpha += 2*np.pi
         
         # move forward
-        # if self.collision_check():
-            # speed *= 0.05
-            # alpha *= -0.5
+        if self.collision_check():
+            speed *= 0.05
+            alpha *= -0.5
         self.car[0] += dt * speed * np.cos(alpha)
         self.car[1] += dt * speed * np.sin(alpha)
         self.car[2] = alpha
 
         # print(f"Car position: ({self.car[0]:.2f}, {self.car[1]:.2f}), speed: {self.car_speed:.2f}, heading: {np.degrees(self.car[2]):.2f} degrees")
 
-        # update agent_1 position
-        # TODO: agent_1 make decision with obs
-        # TODO: 1) build agent obs
-        # TODO: 2) set agent action internally
-        agent_obs = self._get_agent_1_obs() 
-        self.agent_1.step(dt, agent_obs) # update with internal state
-        self.respawn_agent_if_offscreen(self.y_to_road_id(self.car[1]))
+        # update all agents position
+        for i, agent in enumerate(self.agents):
+            agent_obs = self._get_agent_obs(i)
+            agent.step(dt, agent_obs) # update with internal state
+            self.respawn_agent_if_offscreen(i, self.y_to_road_id(self.car[1]))
+
+        self._update_agent_side_counts()
 
         reward = self.reward_calc(turn_delta, acc_delta)
         truncated = self.step_count >= self.max_episode_steps
@@ -421,12 +486,14 @@ class CarAndTargetEnv(gym.Env):
 
         return self._get_obs(), reward, terminated, truncated, self._get_info()
 
-    def respawn_agent_if_offscreen(self, road_id=1):
-        agent_screen_x = self.world_to_screen_x(self.agent_1.state[0])
+    def respawn_agent_if_offscreen(self, agent_idx, road_id=1):
+        agent = self.agents[agent_idx]
+        agent_screen_x = self.world_to_screen_x(agent.state[0])
 
+        agent_idx %= 4
         if agent_screen_x < -self.car_length:
-            self.agent_1.reset(x=self.car[0] + (self.window_width - self.camera_x) + 100, y=self.road_center_y(road_id), heading=0, speed=agent_1_velocity)
-        agent_screen_x = self.world_to_screen_x(self.agent_1.state[0])
+            agent.reset(x=self.car[0] + (self.window_width - self.camera_x) + 100 + agent_idx*50, y=self.road_center_y(road_id), heading=0, speed=agent_1_velocity)
+        agent_screen_x = self.world_to_screen_x(agent.state[0])
 
 
     # AI generated for rendering code
@@ -524,9 +591,10 @@ class CarAndTargetEnv(gym.Env):
 
         self.draw_road(canvas)
 
-        # car and agent_1 car
+        # car and agents
         self.draw_vehicle(canvas, self.car[0], self.car[1], self.car[2], (50, 150, 255))
-        self.draw_vehicle(canvas, self.agent_1.state[0], self.agent_1.state[1], self.agent_1.state[2], (20, 20, 20))
+        for agent in self.agents:
+            self.draw_vehicle(canvas, agent.state[0], agent.state[1], agent.state[2], (20, 20, 20))
 
         # HUD in the upper-left corner
         hud_x = 16

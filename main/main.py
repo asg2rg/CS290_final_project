@@ -124,6 +124,8 @@ def main():
                 r_obs = agent.build_replay_frame()
                 # agent.decay_epsilon(step)
                 next_obs, reward, terminated, truncated, info = env.step(action)
+                # lane, speed, yaw, [exists, lane, speed, yaw, dist, rel_heading]*4
+                # print(len(next_obs), next_obs)
                 agent.update_hists(next_obs, action)
                 done = terminated or truncated
                 r_n_obs = agent.build_replay_frame()

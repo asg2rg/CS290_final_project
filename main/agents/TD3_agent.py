@@ -6,7 +6,7 @@ from utils.replay import ReplayBuffer
 import utils.configs as configs
 
 class TD3Agent:
-    def __init__(self, state_dim = 8, action_dim = 2, actor_lr=1e-4, critic_lr=1e-4):
+    def __init__(self, state_dim = configs.OBS_ELEMENTS_PER_TIMESTEP, action_dim = 2, actor_lr=1e-4, critic_lr=3e-4):
         self.stack_sz = configs.STACK_SZ
         self.state_dim = state_dim
         self.act_dim = action_dim
@@ -38,7 +38,9 @@ class TD3Agent:
         self.action_scale = np.array([configs.MAX_ANG, configs.MAX_ACC], dtype=np.float32)
 
         # histories
-        self.obs_history = [] # list of np arrays, each of shape (obs_dim,)
+        # self.obs_history = [] # list of np arrays, each of shape (obs_dim,)
+        self.car_history = [] # list of np arrays, each of shape (3,) for lane, speed, yaw
+        self.agent_history = [] # list of 4 np arrays for 4 nearest agents, each of shape (6,) for exists, lane, speed, yaw, dist, rel_heading
         self.act_history = [] # list of np arrays, each of shape (action_dim,)
 
         # hyperparams
@@ -56,18 +58,32 @@ class TD3Agent:
         self.explore_noise_min = configs.EXPLORE_NOISE_MIN
     
     def init_hists(self):
-        self.obs_history = []
+        # self.obs_history = []
+        self.car_history = []
+        self.agent_history = []
         self.act_history = []
         # fill history with zeros
         for _ in range(self.stack_sz):
-            self.obs_history.append(np.zeros(self.state_dim, dtype=np.float32))
+            # self.obs_history.append(np.zeros(self.state_dim, dtype=np.float32))
+            self.car_history.append(np.zeros(3, dtype=np.float32))
+            self.agent_history.append(np.zeros((configs.NEAREST_AGENTS, 6), dtype=np.float32))
             self.act_history.append(np.zeros(self.act_dim, dtype=np.float32))
         self.act_history.pop(0)
     
     def _add_obs_history(self, obs):
-        self.obs_history.append(obs)
-        if len(self.obs_history) > self.stack_sz:
-            self.obs_history.pop(0)
+        # self.obs_history.append(obs)
+        # if len(self.obs_history) > self.stack_sz:
+        #     self.obs_history.pop(0)
+        car_obs = obs[:3]
+        agent_obs = obs[3:].reshape(configs.NEAREST_AGENTS, -1)
+        self.car_history.append(car_obs)
+        self.agent_history.append(agent_obs)
+        if len(self.car_history) > self.stack_sz:
+            self.car_history.pop(0)
+        # print(f"Car history: {self.car_history}")
+        if len(self.agent_history) > self.stack_sz:
+            self.agent_history.pop(0)
+        # print(f"Agent history: {self.agent_history}")
     
     def _add_act_history(self, action):
         self.act_history.append(action)
@@ -75,16 +91,22 @@ class TD3Agent:
             self.act_history.pop(0)
     
     def update_hists(self, obs, action):
+        # obs: lane, speed, yaw, [exists, lane, speed, yaw, dist, rel_heading]
         self._add_obs_history(obs)
         self._add_act_history(action)
 
     def build_replay_frame(self):
-        parts = [np.array([configs.TARGET_SPEED, configs.TARGET_LANE], dtype=np.float32)] + self.obs_history + self.act_history
+        agent_fl = [agent_hist.flatten() for agent_hist in self.agent_history]
+        parts = [np.array([configs.TARGET_SPEED, configs.TARGET_LANE, configs.AGENTS_FRONT, configs.AGENTS_BEHIND], dtype=np.float32)] + self.car_history + agent_fl + self.act_history
         obs_np = np.concatenate(parts, axis=0)
         return obs_np
 
     def parse_obs(self):
-        parts = [np.array([configs.TARGET_SPEED, configs.TARGET_LANE], dtype=np.float32)] + self.obs_history + self.act_history
+        agent_fl = [agent_hist.flatten() for agent_hist in self.agent_history]
+        # print(f"Car history: {self.car_history}")
+        # print(f"Agent history: {self.agent_history}")
+        # print(f"Flattened agent history: {agent_fl}")
+        parts = [np.array([configs.TARGET_SPEED, configs.TARGET_LANE, configs.AGENTS_FRONT, configs.AGENTS_BEHIND], dtype=np.float32)] + self.car_history + agent_fl + self.act_history
         
         obs_np = np.concatenate(parts, axis=0)
         obs_t = torch.FloatTensor(obs_np).unsqueeze(0).to(self.device)

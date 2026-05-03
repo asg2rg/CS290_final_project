@@ -5,30 +5,46 @@ from agents.actor import Actor
 from agents.critic import Critic
 
 class AgentController:
-    def __init__(self, real_init = False):
-        if real_init:
-            self.actor = Actor(...)
-            self.critic = Critic(...)
-        else:
-            print("Initialize placeholder Controller")
+    def __init__(self, real_init = False, id = 0):
         self.real_init = real_init
         self.steps = 0
         self.target_lane = None
         self.lane_change_active = False
+        self.is_drunk = False
         self.target_speed = configs.CAR_INITIAL_VEL
         self.speed_change_active = False
         self.target_lane_center_y = None
+        self.id = id
+        if real_init:
+            self.actor = Actor(...)
+            self.critic = Critic(...)
+        else:
+            print(f"Initialize agent Controller {self.id}")
 
     def make_decision(self, obs):
         self.steps += 1
-        car_lane = int(obs[0])
-        agent_lane = int(obs[3])
-        car_speed = obs[1]
-        agent_speed = obs[4]
-        agent_heading = obs[5]
+        agent_lane = int(obs[0])
+        agent_speed = obs[1]
+        agent_heading = obs[2]
+        car_lane = int(obs[3])
+        car_speed = obs[4]
+        car_yaw = obs[5]
         dx = obs[6]
-        lane_error = obs[9:13]
+        dy = obs[7]
+        lane_error = obs[8:12]
         target_lane_error = None
+
+        # print(f"OBS: lane={agent_lane}, speed={agent_speed:.1f}, heading={agent_heading:.2f}, car_lane={car_lane}, car_speed={car_speed:.1f}, car_yaw={car_yaw:.2f}, dx={dx:.1f}, dy={dy:.1f}, lane_error={lane_error}")
+
+        if self.is_drunk:
+            # every 20 steps repeat, heading from -30 to 30 degrees
+            turn_cmd = (0.5 + (np.random.random() - 0.5)*0.3) * np.sin(2 * np.pi * self.steps / 20 * (self.steps // 20 % 2 * 2 - 1)) # alternate between left and right turns
+            # every 60 steps repeat, speed change from -10 to 10
+            acc_cmd = 10.0 * np.sin(2 * np.pi * self.steps / 60)
+            return turn_cmd, acc_cmd
+        
+        if self.steps < 800_000:
+            return 0.0, 0.0 # don't hurt agent early on
 
         if self.real_init:
             # Process obs and get action from actor
@@ -38,10 +54,11 @@ class AgentController:
         else:
             turn_cmd = 0.0
             acc_cmd = 0.0
-            # detect for lane change every 100 steps
-            if (not self.lane_change_active) and (self.steps % 100 == 0):
-                if (car_lane != agent_lane) or np.random.rand() < 0.3:
+            # detect for lane change every 150 steps
+            if (not self.lane_change_active) and (self.steps % 150 == 0):
+                if (car_lane != agent_lane) or np.random.rand() < 0.2: # small chance to change out
                     self.lane_change_active = True
+                    # print(f"Start lane change for agent {self.id}")
                     self.target_lane = 3 if agent_lane == 2 else 2
             # move to the chosen lane
             if self.lane_change_active:
@@ -55,9 +72,9 @@ class AgentController:
                 desired_heading = np.clip(desired_heading, -0.15, 0.15)
 
                 if agent_heading < desired_heading - heading_tolerance:
-                    turn_cmd = 0.07
+                    turn_cmd = np.random.choice([0.07, 0.09, 0.11])
                 elif agent_heading > desired_heading + heading_tolerance:
-                    turn_cmd = -0.07
+                    turn_cmd = -np.random.choice([0.07, 0.09, 0.11])
                 else:
                     turn_cmd = 0.0
 
@@ -87,13 +104,17 @@ class AgentController:
                     if dx > 0: # agent ahead
                         if irrational_probs < 0.1:
                             self.target_speed = configs.TARGET_SPEED + 20.0 # speed up even if ahead
+                            # print(f"Irrational speed up for agent {self.id}")
                         else:
                             self.target_speed = configs.TARGET_SPEED - 20.0
+                            # print(f"Blocking slow down for agent {self.id}")
                     else: # agent behind
                         if irrational_probs < 0.1:
-                            self.target_speed = configs.TARGET_SPEED - 20.0 # slow dodwn even if behind
+                            self.target_speed = configs.TARGET_SPEED - 20.0 # slow down even if behind
+                            # print(f"Irrational slow down for agent {self.id}")
                         else:
                             self.target_speed = configs.TARGET_SPEED + 10.0
+                            # print(f"Chasing speed up for agent {self.id}")
                     self.speed_change_active = True
                     self.target_speed = np.clip(self.target_speed, configs.MIN_SPEED, configs.MAX_SPEED)
             if self.speed_change_active:

@@ -3,11 +3,11 @@ import utils.configs as configs
 from agents.agent_controller import AgentController
 
 class AgentCar:
-    def __init__(self, x, y, heading, speed):
+    def __init__(self, x, y, heading, speed, id):
         self.state = np.array([x, y, heading], dtype=np.float32)
         self.speed = speed
         self.heading = heading
-        self.brains = AgentController()
+        self.brains = AgentController(id = id)
 
     def reset(self, x, y, heading, speed):
         self.state[0] = x
@@ -16,6 +16,7 @@ class AgentCar:
         self.heading = heading
         self.speed = speed
         self.brains.steps = 0
+        self.brains.is_drunk = np.random.rand() < 0.1 if not self.brains.is_drunk else False
     
     def update_state(self, turn_cmd, acc_cmd, dt):
         self.heading += dt * turn_cmd * configs.TURN_UNIT
@@ -24,7 +25,8 @@ class AgentCar:
         if self.heading < -np.pi:
             self.heading += 2 * np.pi
         self.speed += acc_cmd
-        self.speed = np.clip(self.speed, configs.MIN_SPEED, configs.MAX_SPEED)
+        self.speed = np.clip(self.speed, 5.0, configs.MAX_SPEED)
+        # print(f"AgentCar update_state: turn_cmd={turn_cmd}, acc_cmd={acc_cmd}, new_heading={self.heading}, new_speed={self.speed}")
 
     def step(self, dt, obs):
         turn_cmd, acc_cmd = self.brains.make_decision(obs)
