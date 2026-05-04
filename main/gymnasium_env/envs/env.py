@@ -192,7 +192,7 @@ class CarAndTargetEnv(gym.Env):
             info[f"agent_{i}_road"] = self.y_to_road_id(agent.state[1])
         return info
 
-    def reset(self, seed=None, options=None):
+    def reset(self, seed=None, options=None, agent_increment=False):
         super().reset(seed=seed)
         self.step_count = 0
         self.eps_reward = 0.0
@@ -205,6 +205,9 @@ class CarAndTargetEnv(gym.Env):
         configs.TARGET_LANE = np.random.choice([2, 3])
         self.car_speed = car_velocity
 
+        if agent_increment:
+            # print(f"Incrementing agent count to {configs.AGENT_CNT} for next episode.")
+            self.agents = [AgentCar(id = i, x=350.0 + i*100, y=self.road_center_y(i), heading=np.pi, speed=agent_1_velocity) for i in range(configs.AGENT_CNT)]
         for i, agent in enumerate(self.agents):
             lane = np.random.choice(4)
             heading = 0

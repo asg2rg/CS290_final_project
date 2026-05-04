@@ -109,20 +109,34 @@ def main():
     step = 0
     episode_cnt = 0
     configs.AGENT_CNT = 1
+    increment_agent_cnt = True
     try:    
         while step < (G_STEPS):
-            obs, info = env.reset()
+            if step > G_STEPS * 0.8:
+                last_cnt = configs.AGENT_CNT
+                next_cnt = np.random.choice(5)
+                if next_cnt < 3:
+                    if np.random.rand() < 0.5:
+                        next_cnt = np.random.choice([3, 4, 5]) # weigh towards possibility of more agents
+                configs.AGENT_CNT = next_cnt
+                if next_cnt != last_cnt:
+                    increment_agent_cnt = True
+            elif step > G_STEPS * 0.6:
+                configs.AGENT_CNT = 3
+                increment_agent_cnt = True
+            elif step > G_STEPS * 0.3:
+                configs.AGENT_CNT = 2
+                increment_agent_cnt = True
+            if increment_agent_cnt:
+                print(f"Step {step}: Increasing agent count to {configs.AGENT_CNT}.")
+
+            obs, info = env.reset(agent_increment = increment_agent_cnt)
             agent.init_hists()
             agent._add_obs_history(obs)
             episode_reward = 0.0
             eps_disc_reward = 0.0
             done = False
             ep_step = 0
-
-            if step > G_STEPS * 0.6:
-                configs.AGENT_CNT = 3
-            elif step > G_STEPS * 0.3:
-                configs.AGENT_CNT = 2
 
             while not done:
                 # interaction loop
@@ -171,6 +185,7 @@ def main():
                     agent.save_checkpoint(save_path)
                     print(f"Checkpoint saved to {save_path}.")
                     eps_since_last_save = 0
+            increment_agent_cnt = False
 
         env.close()
         agent.save_checkpoint(save_path)
