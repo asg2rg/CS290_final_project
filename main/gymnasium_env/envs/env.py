@@ -48,7 +48,7 @@ class CarAndTargetEnv(gym.Env):
         # car info
         self.car = np.array([100.0, 100.0, 0.0], dtype=np.float32) # car init x at 100
         self.agents = [AgentCar(id = i, x=350.0 + i*100, y=self.road_center_y(i%4), heading=self.heading_for_lane(i%4), speed=agent_1_velocity) for i in range(configs.MAX_AGENTS)]
-        
+        self.active_agents = self.agents[:configs.AGENT_CNT]
         # self.agents[0].heading *= -1
         # self.agents[1].heading *= -1
         
@@ -108,24 +108,24 @@ class CarAndTargetEnv(gym.Env):
         return [1.0, agent_road_id, target_agent.speed, target_agent.state[2], rel_dist, heading_error]
 
     def _update_agent_side_counts(self):
-        configs.AGENTS_FRONT = sum(1 for agent in self.agents if agent.state[0] > self.car[0])
-        configs.AGENTS_BEHIND = sum(1 for agent in self.agents if agent.state[0] < self.car[0])
+        configs.AGENTS_FRONT = sum(1 for agent in self.active_agents if agent.state[0] > self.car[0])
+        configs.AGENTS_BEHIND = sum(1 for agent in self.active_agents if agent.state[0] < self.car[0])
 
     def _get_reference_agent(self):
-        if not self.agents:
+        if not self.active_agents:
             return None
-        return min(self.agents, key=lambda agent: (agent.state[0] - self.car[0]) ** 2 + (agent.state[1] - self.car[1]) ** 2)
+        return min(self.active_agents, key=lambda agent: (agent.state[0] - self.car[0]) ** 2 + (agent.state[1] - self.car[1]) ** 2)
 
     # observation space for the car
     def _get_obs(self):
         car_road_id = self.y_to_road_id(self.car[1])
         obs_parts = [car_road_id, self.car_speed, self.car[2]]
 
-        if not self.agents:
+        if not self.active_agents:
             nearest_indices = []
         else:
             agent_distances = []
-            for i, agent in enumerate(self.agents):
+            for i, agent in enumerate(self.active_agents):
                 dx = agent.state[0] - self.car[0]
                 dy = agent.state[1] - self.car[1]
                 dist = np.sqrt(dx**2 + dy**2)
@@ -134,7 +134,7 @@ class CarAndTargetEnv(gym.Env):
             nearest_indices = [i for _, i in agent_distances[:configs.NEAREST_AGENTS]]
 
         for nearest_idx in nearest_indices:
-            obs_parts.extend(self._build_agent_obs(self.agents[nearest_idx]))
+            obs_parts.extend(self._build_agent_obs(self.active_agents[nearest_idx]))
 
         for _ in range(configs.NEAREST_AGENTS - len(nearest_indices)):
             obs_parts.extend([0.0, -1.0, 0.0, 0.0, 0.0, 0.0])
@@ -143,9 +143,9 @@ class CarAndTargetEnv(gym.Env):
 
     def _get_nearest_agents(self, agent_idx, k=4):
         """Get indices of k nearest agents to the given agent (excluding itself)"""
-        agent = self.agents[agent_idx]
+        agent = self.active_agents[agent_idx]
         distances = []
-        for i, other in enumerate(self.agents):
+        for i, other in enumerate(self.active_agents):
             if i != agent_idx:
                 dx = other.state[0] - agent.state[0]
                 dy = other.state[1] - agent.state[1]
@@ -156,7 +156,7 @@ class CarAndTargetEnv(gym.Env):
 
     def _get_agent_obs(self, agent_idx):
         """Get observation for agent_idx from that agent's POV: agent's own state + 4 nearest other agents"""
-        agent = self.agents[agent_idx]
+        agent = self.active_agents[agent_idx]
         agent_road_id = self.y_to_road_id(agent.state[1])
         obs_parts = [agent_road_id, agent.speed, agent.state[2]]
 
@@ -172,7 +172,7 @@ class CarAndTargetEnv(gym.Env):
         nearest_indices = self._get_nearest_agents(agent_idx, configs.NEAREST_AGENTS-1)
         for nearest_idx in nearest_indices:
             if nearest_idx >= 0:
-                nearest_agent = self.agents[nearest_idx]
+                nearest_agent = self.active_agents[nearest_idx]
                 obs_parts.extend(self._build_agent_obs(nearest_agent, reference_entity=agent.state))
             else:
                 obs_parts.extend([0.0, -1.0, 0.0, 0.0, 0.0, 0.0])
@@ -185,11 +185,11 @@ class CarAndTargetEnv(gym.Env):
         info = {
             "car_x": self.car[0],
             "car_road": self.y_to_road_id(self.car[1]),
-            "agent_count": len(self.agents),
+            "agent_count": len(self.active_agents),
             "agents_front": configs.AGENTS_FRONT,
             "agents_behind": configs.AGENTS_BEHIND
         }
-        for i, agent in enumerate(self.agents):
+        for i, agent in enumerate(self.active_agents):
             info[f"agent_{i}_x"] = agent.state[0]
             info[f"agent_{i}_road"] = self.y_to_road_id(agent.state[1])
         return info
@@ -212,13 +212,15 @@ class CarAndTargetEnv(gym.Env):
             spawn_agents = np.random.randint(1, configs.MAX_AGENTS + 1)
             if np.random.random() < 0.5:
                 spawn_agents = np.random.randint(configs.MAX_AGENTS - 1, configs.MAX_AGENTS + 1)
-        for i in range(spawn_agents):
-            agent = self.agents[i]
+        
+        self.active_agents = self.agents[:spawn_agents]
+
+        for i, agent in enumerate(self.active_agents):
             lane = np.random.choice(4)
             heading = self.heading_for_lane(lane)
             x_offset = (np.random.random() - 0.5) * 200
             spd = agent_1_velocity + (np.random.random() - 0.5) * 10
-            agent.reset(x=400 + (i%4)*200 + x_offset, y=self.road_center_y(lane), heading=heading, speed=spd)
+            agent.reset(x=400 + i*200 + x_offset, y=self.road_center_y(lane), heading=heading, speed=spd)
 
             # print(f"Spawned agent {i} in lane {lane} at x={agent.state[0]:.1f} with heading {heading}")
         self._update_agent_side_counts()
@@ -363,7 +365,7 @@ class CarAndTargetEnv(gym.Env):
             self.rotate_point(-x_zone, -y_zone, car_yaw)
         ]) + np.array([car_x, car_y])
 
-        for agent in self.agents:
+        for agent in self.active_agents:
             agent_x = agent.state[0]
             agent_y = agent.state[1]
             agent_yaw = agent.state[2]
@@ -474,7 +476,7 @@ class CarAndTargetEnv(gym.Env):
         # print(f"Car position: ({self.car[0]:.2f}, {self.car[1]:.2f}), speed: {self.car_speed:.2f}, heading: {np.degrees(self.car[2]):.2f} degrees")
 
         # update all agents position
-        for i, agent in enumerate(self.agents):
+        for i, agent in enumerate(self.active_agents):
             # agent_obs = self._get_agent_obs(i)
             # agent.step(dt, agent_obs) # update with internal state
             # self.respawn_agent_if_offscreen(i, self.y_to_road_id(self.car[1]))
@@ -505,7 +507,7 @@ class CarAndTargetEnv(gym.Env):
 
     def respawn_agent_if_offscreen(self, agent_idx):
         spawn_in_front_prob = 0.55
-        agent = self.agents[agent_idx]
+        agent = self.active_agents[agent_idx]
         agent_screen_x = self.world_to_screen_x(agent.state[0])
 
         if agent_screen_x < -self.car_length:
@@ -520,7 +522,7 @@ class CarAndTargetEnv(gym.Env):
             spd = agent_1_velocity + (np.random.random() - 0.5) * 10
 
             agent.reset(
-                x=self.car[0] + (self.window_width - self.camera_x) + 100 + (agent_idx % 4) * 200 + x_offset,
+                x=self.car[0] + (self.window_width - self.camera_x) + 100 + agent_idx * 200 + x_offset,
                 y=self.road_center_y(lane),
                 heading=heading,
                 speed=spd
@@ -623,7 +625,7 @@ class CarAndTargetEnv(gym.Env):
 
         # car and agents
         self.draw_vehicle(canvas, self.car[0], self.car[1], self.car[2], (50, 150, 255))
-        for agent in self.agents:
+        for agent in self.active_agents:
             self.draw_vehicle(canvas, agent.state[0], agent.state[1], agent.state[2], (20, 20, 20))
 
         # HUD in the upper-left corner
@@ -674,7 +676,7 @@ class CarAndTargetEnv(gym.Env):
         nearest_back = None
         nearest_back_dx = -np.inf
 
-        for agent in self.agents:
+        for agent in self.active_agents:
             if agent is target_agent:
                 continue
             other_lane = self.y_to_road_id(agent.state[1])

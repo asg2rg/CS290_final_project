@@ -61,7 +61,14 @@ class AgentController:
                 if (car_lane != agent_lane) or np.random.rand() < 0.2: # small chance to change out
                     self.lane_change_active = True
                     # print(f"Start lane change for agent {self.id}")
-                    self.target_lane = 3 if agent_lane == 2 else 2
+                    if agent_lane == 0:
+                        self.target_lane = 1
+                    elif agent_lane == 1:
+                        self.target_lane = 0
+                    elif agent_lane == 2:
+                        self.target_lane = 3
+                    elif agent_lane == 3:
+                        self.target_lane = 2
             # move to the chosen lane
             if self.lane_change_active:
                 # print(f"Changing lane from {agent_lane} to {self.target_lane}")
