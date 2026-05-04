@@ -47,7 +47,8 @@ class CarAndTargetEnv(gym.Env):
 
         # car info
         self.car = np.array([100.0, 100.0, 0.0], dtype=np.float32) # car init x at 100
-        self.agents = [AgentCar(id = i, x=350.0 + i*100, y=self.road_center_y(i%4), heading=np.pi, speed=agent_1_velocity) for i in range(configs.MAX_AGENTS)]
+        self.agents = [AgentCar(id = i, x=350.0 + i*100, y=self.road_center_y(i%4), heading=self.heading_for_lane(i%4), speed=agent_1_velocity) for i in range(configs.MAX_AGENTS)]
+        
         # self.agents[0].heading *= -1
         # self.agents[1].heading *= -1
         
@@ -214,9 +215,7 @@ class CarAndTargetEnv(gym.Env):
         for i in range(spawn_agents):
             agent = self.agents[i]
             lane = np.random.choice(4)
-            heading = 0
-            if lane in [0, 1]:
-                heading = np.pi
+            heading = self.heading_for_lane(lane)
             x_offset = (np.random.random() - 0.5) * 200
             spd = agent_1_velocity + (np.random.random() - 0.5) * 10
             agent.reset(x=400 + (i%4)*200 + x_offset, y=self.road_center_y(lane), heading=heading, speed=spd)
@@ -515,9 +514,7 @@ class CarAndTargetEnv(gym.Env):
             else:
                 lane = np.random.choice(4)  
 
-            heading = 0
-            if lane in [0, 1]:
-                heading = np.pi
+            heading = self.heading_for_lane(lane)
 
             x_offset = (np.random.random() - 0.5) * 200
             spd = agent_1_velocity + (np.random.random() - 0.5) * 10
@@ -722,3 +719,9 @@ class CarAndTargetEnv(gym.Env):
                 safe_turn_cmd = 0.0
 
         return safe_turn_cmd, safe_acc_cmd
+
+    def heading_for_lane(self, lane):
+        if lane in [0, 1]:
+            return np.pi
+        else:
+            return 0.0
