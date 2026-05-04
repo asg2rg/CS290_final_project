@@ -15,6 +15,8 @@ class AgentController:
         self.speed_change_active = False
         self.target_lane_center_y = None
         self.id = id
+        self.just_finished_lane_change = False
+
         if real_init:
             self.actor = Actor(...)
             self.critic = Critic(...)
@@ -91,6 +93,7 @@ class AgentController:
                 if (agent_lane == self.target_lane and abs(target_lane_error) < lane_tolerance and abs(agent_heading) < heading_tolerance):
                     self.lane_change_active = False
                     self.target_lane = None
+                    self.just_finished_lane_change = True
 
                 return turn_cmd, acc_cmd
 

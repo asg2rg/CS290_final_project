@@ -119,9 +119,11 @@ def main():
             done = False
             ep_step = 0
 
-            if step > G_STEPS * 0.6:
+            if step > G_STEPS * 0.8:
+                configs.AGENT_CNT = configs.MAX_AGENTS
+            elif step > G_STEPS * 0.4:
                 configs.AGENT_CNT = 3
-            elif step > G_STEPS * 0.3:
+            elif step > G_STEPS * 0.2:
                 configs.AGENT_CNT = 2
 
             while not done:
