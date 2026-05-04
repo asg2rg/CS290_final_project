@@ -28,9 +28,17 @@ class AgentCar:
         self.speed = np.clip(self.speed, 5.0, configs.MAX_SPEED)
         # print(f"AgentCar update_state: turn_cmd={turn_cmd}, acc_cmd={acc_cmd}, new_heading={self.heading}, new_speed={self.speed}")
 
-    def step(self, dt, obs):
-        turn_cmd, acc_cmd = self.brains.make_decision(obs)
-        self.update_state(turn_cmd, acc_cmd, dt)
+    def move(self, dt):
+        if self.brains.just_finished_lane_change:
+            self.heading = 0.0
+            self.state[2] = 0.0
+            self.brains.just_finished_lane_change = False
+
         self.state[0] += self.speed * dt * np.cos(self.heading)
         self.state[1] += self.speed * dt * np.sin(self.heading)
         self.state[2] = self.heading
+
+    def step(self, dt, obs):
+        turn_cmd, acc_cmd = self.brains.make_decision(obs)
+        self.update_state(turn_cmd, acc_cmd, dt)
+        self.move(dt)
