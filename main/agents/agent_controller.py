@@ -43,7 +43,7 @@ class AgentController:
             acc_cmd = 10.0 * np.sin(2 * np.pi * self.steps / 60)
             return turn_cmd, acc_cmd
         
-        if self.steps < 800_000:
+        if self.steps < 1_200_000 and not configs.EVAL:
             return 0.0, 0.0 # don't hurt agent early on
 
         if self.real_init:

@@ -1,6 +1,7 @@
 from gymnasium_env.envs.env import CarAndTargetEnv
 import time
 import utils.configs as configs
+from utils.configs import G_STEPS
 import numpy as np
 import csv
 from agents.TD3_agent import TD3Agent
@@ -107,8 +108,9 @@ def main():
 
     step = 0
     episode_cnt = 0
+    configs.AGENT_CNT = 1
     try:    
-        while step < (configs.G_STEPS):
+        while step < (G_STEPS):
             obs, info = env.reset()
             agent.init_hists()
             agent._add_obs_history(obs)
@@ -116,6 +118,11 @@ def main():
             eps_disc_reward = 0.0
             done = False
             ep_step = 0
+
+            if step > G_STEPS * 0.6:
+                configs.AGENT_CNT = 3
+            elif step > G_STEPS * 0.3:
+                configs.AGENT_CNT = 2
 
             while not done:
                 # interaction loop

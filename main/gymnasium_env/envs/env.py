@@ -228,7 +228,7 @@ class CarAndTargetEnv(gym.Env):
         #### PENALTIES ####
         # collision penalty
         if self.collision_check():
-            col_rwd = -3.0
+            col_rwd = -10.0
             reward += col_rwd
         # OOB penalty
         if self.boundary_check():
@@ -239,7 +239,7 @@ class CarAndTargetEnv(gym.Env):
             yaw_rwd = -5.0
             reward += yaw_rwd
             # print(f"Reversed penalty: {yaw_rwd}")
-        elif yaw_deg > 6.0:
+        elif yaw_deg > 60.0:
             yaw_rwd = -3.0
             reward += yaw_rwd
             # print(f"Large yaw penalty: {yaw_rwd}")
@@ -249,7 +249,7 @@ class CarAndTargetEnv(gym.Env):
         elif yaw_deg > 10.0:
             yaw_rwd = -0.5
             reward += yaw_rwd
-        if not configs.DISCRETE and not configs.EVAL:
+        if not configs.DISCRETE:
             # penalize excessive speed
             if abs(acc_cmd) > configs.MAX_ACC:
                 reward -= (abs(acc_cmd) - configs.MAX_ACC) * 0.1
@@ -258,7 +258,7 @@ class CarAndTargetEnv(gym.Env):
             if abs(turn_cmd) > configs.MAX_ANG:
                 reward -= (abs(turn_cmd) - configs.MAX_ANG) * 0.3
                 # print(f"Excessive turning penalty: turn {turn_cmd}")
-            if speed_diff > 10.0:
+            if speed_diff > 30.0:
                 spd_rwd = (speed_diff - 5.0) * -0.1
                 reward += spd_rwd
                 # print(f"Diff speed penalty: {spd_rwd}")
@@ -269,20 +269,20 @@ class CarAndTargetEnv(gym.Env):
             return reward
         # positive distance reward
         dist_rwd = self.car[0] - self.last_x
-        reward += min(dist_rwd * 0.01, 0.1)
+        reward += min(dist_rwd * 0.01, 0.07)
         # reward close to target speed and straight
         if yaw_deg < 3.0:
             reward += 0.5
         elif yaw_deg < 7.0:
             reward += 0.2
-        speed_rwd = max(2.5 - speed_diff * 0.5, 0.0)
+        speed_rwd = max(1.0 - speed_diff * 0.1, 0.0)
         reward += speed_rwd
 
         # lane control
         lane = self.y_to_road_id(self.car[1])
         # penalize lane switching
         if lane != self.last_lane:
-            lane_change_rwd = -0.3#5
+            lane_change_rwd = -0.3
             reward += lane_change_rwd
             # print(f"Lane change penalty: {lane_change_rwd}")
             self.last_lane = lane
@@ -291,14 +291,17 @@ class CarAndTargetEnv(gym.Env):
             lane_rwd = 3.0
             reward += lane_rwd
         elif (configs.TARGET_LANE in [2, 3] and lane in [2, 3]) or (configs.TARGET_LANE in [0, 1] and lane in [0, 1]):
-            reward += -0.0#0.7
+            reward += 0.5
         else:
             # wrong side of road or off road
-            reward += -1.0
+            reward += -1.5
         # penalize far from road center
         dist_to_lane_center = abs(self.car[1] - self.road_center_y(lane)) # range 0~40
-        dist_center_rwd = 0.3-((dist_to_lane_center**2 / 10) * 0.005)
+        dist_center_rwd = 0.3-((dist_to_lane_center**2 / 5) * 0.005)
         reward += dist_center_rwd
+        dist_to_tgt_center = abs(self.car[1] - self.road_center_y(configs.TARGET_LANE))
+        dist_tgt_center_rwd = 0.3-min((dist_to_tgt_center * 0.005), 0.4)
+        reward += dist_tgt_center_rwd
         # print(dist_center_rwd)
             
         #### JERKING PENALTIES ####
@@ -453,9 +456,9 @@ class CarAndTargetEnv(gym.Env):
             alpha += 2*np.pi
         
         # move forward
-        if self.collision_check():
-            speed *= 0.05
-            alpha *= -0.5
+        # if self.collision_check():
+        #     speed *= 0.05
+        #     alpha *= -0.5
         self.car[0] += dt * speed * np.cos(alpha)
         self.car[1] += dt * speed * np.sin(alpha)
         self.car[2] = alpha
@@ -491,8 +494,11 @@ class CarAndTargetEnv(gym.Env):
         agent_screen_x = self.world_to_screen_x(agent.state[0])
 
         agent_idx %= 4
+        heading = 0
+        if road_id in [0, 1]:
+            heading = np.pi
         if agent_screen_x < -self.car_length:
-            agent.reset(x=self.car[0] + (self.window_width - self.camera_x) + 100 + agent_idx*50, y=self.road_center_y(road_id), heading=0, speed=agent_1_velocity)
+            agent.reset(x=self.car[0] + (self.window_width - self.camera_x) + 100 + agent_idx*50, y=self.road_center_y(road_id), heading=heading, speed=agent_1_velocity)
         agent_screen_x = self.world_to_screen_x(agent.state[0])
 
 

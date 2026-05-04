@@ -76,7 +76,7 @@ EPS_START = 1.0
 EPS_MIN = 0.05
 EPS_DECAY = 0.9957
 
-DISCOUNT = 0.98
+DISCOUNT = 0.97
 BATCH_SIZE = 1024
 
 def verify_setup(dec = EPS_DECAY):

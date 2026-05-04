@@ -4,6 +4,7 @@ from agents.actor import Actor
 from agents.critic import Critic
 from utils.replay import ReplayBuffer
 import utils.configs as configs
+from utils.configs import G_STEPS
 
 class TD3Agent:
     def __init__(self, state_dim = configs.OBS_ELEMENTS_PER_TIMESTEP, action_dim = 2, actor_lr=1e-4, critic_lr=3e-4):
@@ -133,7 +134,7 @@ class TD3Agent:
         # if greed < self.epsilon:
             # explore: random action
         if not configs.DISCRETE:
-            if step < configs.G_STEPS*0.05:
+            if step < G_STEPS*0.05:
                 action = np.random.uniform(low=self.action_low, high=self.action_high, size=(self.act_dim,)).astype(np.float32)
             else:
                 # exploit: action from actor
@@ -229,7 +230,7 @@ class TD3Agent:
             self.epsilon = max(self.epsilon, self.epsilon_min)
     
     def get_noise_std(self, step):
-        frac = min((step/(configs.G_STEPS * 0.9)), 1.0)
+        frac = min((step/(G_STEPS * 0.9)), 1.0)
         return self.explore_noise_std - (self.explore_noise_std - self.explore_noise_min) * frac
     
     def save_checkpoint(self, path):
