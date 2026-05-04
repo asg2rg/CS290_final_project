@@ -112,20 +112,19 @@ def main():
     increment_agent_cnt = True
     try:    
         while step < (G_STEPS):
+            last_cnt = configs.AGENT_CNT
             if step > G_STEPS * 0.8:
-                last_cnt = configs.AGENT_CNT
                 next_cnt = np.random.choice(5)
                 if next_cnt < 3:
                     if np.random.rand() < 0.5:
                         next_cnt = np.random.choice([3, 4, 5]) # weigh towards possibility of more agents
                 configs.AGENT_CNT = next_cnt
-                if next_cnt != last_cnt:
-                    increment_agent_cnt = True
             elif step > G_STEPS * 0.6:
                 configs.AGENT_CNT = 3
-                increment_agent_cnt = True
             elif step > G_STEPS * 0.3:
                 configs.AGENT_CNT = 2
+                
+            if configs.AGENT_CNT != last_cnt:
                 increment_agent_cnt = True
             if increment_agent_cnt:
                 print(f"Step {step}: Increasing agent count to {configs.AGENT_CNT}.")
