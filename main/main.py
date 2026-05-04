@@ -111,13 +111,7 @@ def main():
     configs.AGENT_CNT = 1
     try:    
         while step < (G_STEPS):
-            obs, info = env.reset()
-            agent.init_hists()
-            agent._add_obs_history(obs)
-            episode_reward = 0.0
-            eps_disc_reward = 0.0
-            done = False
-            ep_step = 0
+
 
             if step > G_STEPS * 0.8:
                 configs.AGENT_CNT = configs.MAX_AGENTS
@@ -126,6 +120,14 @@ def main():
             elif step > G_STEPS * 0.2:
                 configs.AGENT_CNT = 2
 
+            obs, info = env.reset()
+            agent.init_hists()
+            agent._add_obs_history(obs)
+            episode_reward = 0.0
+            eps_disc_reward = 0.0
+            done = False
+            ep_step = 0
+            
             while not done:
                 # interaction loop
                 obs_t = agent.parse_obs()
