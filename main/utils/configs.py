@@ -70,12 +70,12 @@ acc_cmds = {
 EXPLORE_NOISE_STD = 0.35
 EXPLORE_NOISE_MIN = 0.05
 
-G_STEPS = 2_500_000
+G_STEPS = 4_500_000
 DECAY_INTERVAL = 1000
 
 EPS_START = 1.0
 EPS_MIN = 0.05
-EPS_DECAY = 0.9957
+EPS_DECAY = 0.999
 
 DISCOUNT = 0.97
 BATCH_SIZE = 1024
@@ -87,3 +87,6 @@ def verify_setup(dec = EPS_DECAY):
     steps = math.log(ratio, dec)
     final_explore_step = steps * DECAY_INTERVAL
     print(f"With decay {dec}, it would take {steps:.2f} decay steps, or {final_explore_step:.0f} global steps to reach EPS_MIN.")
+
+if __name__ == "__main__":
+    verify_setup()

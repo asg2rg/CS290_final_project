@@ -98,14 +98,23 @@ class CarAndTargetEnv(gym.Env):
         agent_road_id = self.y_to_road_id(target_agent.state[1])
         dx = target_agent.state[0] - reference_entity[0]
         dy = target_agent.state[1] - reference_entity[1]
+        # positive dist if in front of reference entity, negative if behind
         rel_dist = np.sqrt(dx**2 + dy**2)
         rel_angle = np.arctan2(dy, dx)
+        spd = target_agent.speed
+        if target_agent.state[2] > np.pi/2 or target_agent.state[2] < -np.pi/2: # facing left mostly
+            spd *= -1
+        if dx < 0:
+            rel_dist *= -1
+        if reference_entity.state[2] > np.pi/2 or reference_entity.state[2] < -np.pi/2: # facing left mostly
+            spd *= -1
+            rel_dist *= -1 # if both facing left, then -x is front #### pending observing if this actually works better
         heading_error = rel_angle - target_agent.state[2]
         while heading_error > np.pi:
             heading_error -= 2 * np.pi
         while heading_error < -np.pi:
             heading_error += 2 * np.pi
-        return [1.0, agent_road_id, target_agent.speed, target_agent.state[2], rel_dist, heading_error]
+        return [1.0, agent_road_id, spd, target_agent.state[2], rel_dist, heading_error]
 
     def _update_agent_side_counts(self):
         configs.AGENTS_FRONT = sum(1 for agent in self.active_agents if agent.state[0] > self.car[0])
@@ -138,6 +147,8 @@ class CarAndTargetEnv(gym.Env):
 
         for _ in range(configs.NEAREST_AGENTS - len(nearest_indices)):
             obs_parts.extend([0.0, -1.0, 0.0, 0.0, 0.0, 0.0])
+        
+        print(f"Car obs: {obs_parts}")
 
         return np.array(obs_parts, dtype=np.float32)
 
@@ -208,10 +219,8 @@ class CarAndTargetEnv(gym.Env):
         self.car_speed = car_velocity
 
         spawn_agents = configs.AGENT_CNT
-        if spawn_agents == configs.MAX_AGENTS:
-            spawn_agents = np.random.randint(1, configs.MAX_AGENTS + 1)
-            if np.random.random() < 0.5:
-                spawn_agents = np.random.randint(configs.MAX_AGENTS - 1, configs.MAX_AGENTS + 1)
+        if configs.EVAL:
+            spawn_agents = np.random.choice(configs.MAX_AGENTS, p=[0.1, 0.2, 0.3, 0.3, 0.1]) + 1
         
         self.active_agents = self.agents[:spawn_agents]
 
@@ -298,19 +307,21 @@ class CarAndTargetEnv(gym.Env):
             self.last_lane = lane
         # reward being in right lane
         if lane == configs.TARGET_LANE:
-            lane_rwd = 3.0
+            lane_rwd = 2.0
             reward += lane_rwd
         elif (configs.TARGET_LANE in [2, 3] and lane in [2, 3]) or (configs.TARGET_LANE in [0, 1] and lane in [0, 1]):
-            reward += 0.5#0.0
+            lane_rwd = 0.1 # better than wrong
+            reward += lane_rwd
         else:
             # wrong side of road or off road
-            reward += -1.5#1.0
+            lane_rwd = -1.5#1.0
+            reward += lane_rwd
         # penalize far from road center
         dist_to_lane_center = abs(self.car[1] - self.road_center_y(lane)) # range 0~40
         dist_center_rwd = 0.3-((dist_to_lane_center**2 / 5) * 0.005)
         reward += dist_center_rwd
         dist_to_tgt_center = abs(self.car[1] - self.road_center_y(configs.TARGET_LANE))
-        dist_tgt_center_rwd = 0.3-min((dist_to_tgt_center * 0.005), 0.4)
+        dist_tgt_center_rwd = 0.5-min((dist_to_tgt_center * 0.008), 1.0)
         reward += dist_tgt_center_rwd
         # print(dist_center_rwd)
             
@@ -320,7 +331,7 @@ class CarAndTargetEnv(gym.Env):
             yaw_rwd = yaw_deg * -0.05
             reward += yaw_rwd
             # print(f"Yaw penalty: {yaw_rwd}")
-        if abs(turn_cmd) > 1.0:
+        if abs(turn_cmd) > 0.8:
             turn_rwd = abs(turn_cmd) * -0.1
             reward += turn_rwd
         return reward

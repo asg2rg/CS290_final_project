@@ -231,7 +231,8 @@ class TD3Agent:
     
     def get_noise_std(self, step):
         frac = min((step/(G_STEPS * 0.9)), 1.0)
-        return self.explore_noise_std - (self.explore_noise_std - self.explore_noise_min) * frac
+        self.explore_noise_std -= (self.explore_noise_std - self.explore_noise_min) * frac
+        return self.explore_noise_std
     
     def save_checkpoint(self, path):
         torch.save({

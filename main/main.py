@@ -108,17 +108,19 @@ def main():
 
     step = 0
     episode_cnt = 0
-    configs.AGENT_CNT = 1
+    configs.AGENT_CNT = 0
     try:    
         while step < (G_STEPS):
-
-
             if step > G_STEPS * 0.8:
-                configs.AGENT_CNT = configs.MAX_AGENTS
-            elif step > G_STEPS * 0.4:
+                configs.AGENT_CNT = np.random.choice(configs.MAX_AGENTS + 1, p=[0.05, 0.1, 0.2, 0.3, 0.25, 0.1])
+            elif step > G_STEPS * 0.8:
+                configs.AGENT_CNT = 4
+            elif step > G_STEPS * 0.6:
                 configs.AGENT_CNT = 3
-            elif step > G_STEPS * 0.2:
+            elif step > G_STEPS * 0.3:
                 configs.AGENT_CNT = 2
+            elif step > G_STEPS * 0.1:
+                configs.AGENT_CNT = 1
 
             obs, info = env.reset()
             agent.init_hists()
