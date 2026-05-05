@@ -106,7 +106,7 @@ class CarAndTargetEnv(gym.Env):
             spd *= -1
         if dx < 0:
             rel_dist *= -1
-        if reference_entity.state[2] > np.pi/2 or reference_entity.state[2] < -np.pi/2: # facing left mostly
+        if reference_entity[2] > np.pi/2 or reference_entity[2] < -np.pi/2: # facing left mostly
             spd *= -1
             rel_dist *= -1 # if both facing left, then -x is front #### pending observing if this actually works better
         heading_error = rel_angle - target_agent.state[2]
