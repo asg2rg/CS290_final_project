@@ -45,8 +45,8 @@ class AgentController:
             acc_cmd = 10.0 * np.sin(2 * np.pi * self.steps / 60)
             return turn_cmd, acc_cmd
         
-        if self.steps < 1_200_000 and not configs.EVAL:
-            return 0.0, 0.0 # don't hurt agent early on
+        if self.steps < configs.G_STEPS * 0.15 and not configs.EVAL:
+            return 0.0, 0.0 # avoid hurting early learning ## don't hurt me, don't hurt me, no more
 
         if self.real_init:
             # Process obs and get action from actor
