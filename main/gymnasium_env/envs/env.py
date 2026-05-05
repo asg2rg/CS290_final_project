@@ -148,7 +148,7 @@ class CarAndTargetEnv(gym.Env):
         for _ in range(configs.NEAREST_AGENTS - len(nearest_indices)):
             obs_parts.extend([0.0, -1.0, 0.0, 0.0, 0.0, 0.0])
         
-        print(f"Car obs: {obs_parts}")
+        # print(f"Car obs: {obs_parts}")
 
         return np.array(obs_parts, dtype=np.float32)
 
