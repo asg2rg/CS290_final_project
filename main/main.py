@@ -67,7 +67,7 @@ def main():
     parser.add_argument('--discrete', action='store_true', default = False, help='Use discrete action space')
     parser.add_argument('--eval', action='store_true', default = False, help='Run evaluation loop after training')
     parser.add_argument('--exp-name', type=str, default="", help='Prefix for log and checkpoint files')
-    parser.add_argument('--stage', type=int, default="", help='Stage of the experiment')
+    parser.add_argument('--stage', type=int, default=-1, help='Stage of the experiment')
     args = parser.parse_args()
     
     print("##############################################")
@@ -108,7 +108,7 @@ def main():
         return
 
     stage = None
-    if args.stage != "":
+    if args.stage != -1:
         stage = args.stage
         eps_log_path += f"_stage_{stage}"
         step_log_path += f"_stage_{stage}"

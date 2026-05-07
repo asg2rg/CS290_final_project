@@ -1,19 +1,57 @@
-# output 2 discrete actions: turn(0~6) and accel(0~5)
 import torch
 import torch.nn as nn
+import utils.configs as configs
 
 class Critic(nn.Module):
     def __init__(self, obs_dim, action_dim):
         super().__init__()
-        self.network = nn.Sequential(
-            nn.Linear(obs_dim + action_dim, 128),
+        S = configs.STACK_SZ
+        N = configs.NEAREST_AGENTS
+        F = configs.OBS_DIM + 1 # exists flag
+
+        self.agent_feat_dim = S * F
+        self.agent_embs = nn.Sequential(
+            nn.Linear(self.agent_feat_dim, 64),
             nn.ReLU(),
-            nn.Linear(128, 64),
-            nn.LayerNorm(64),
+            nn.Linear(64, 64),
             nn.ReLU(),
-            nn.Linear(64, 1)
         )
 
+        self.car_obs = 4 + S * 3 + (S - 1) * 2
+        # critic input = ego_ctx + deepsets_context + action
+        self.net = nn.Sequential(
+            nn.Linear(self.car_obs + 64 + action_dim, 256),
+            nn.ReLU(),
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            nn.Linear(128, 1),
+        )
+        self._S = S
+        self._N = N
+
+    def _parse(self, obs):
+        B = obs.shape[0]
+        S, N = self._S, self._N
+        task    = obs[:, :4]
+        ego     = obs[:, 4 : 4 + S*3]
+        ag_flat = obs[:, 4 + S*3 : 4 + S*3 + S*N*6]
+        actions = obs[:, 4 + S*3 + S*N*6 :]
+        agents_4d = ag_flat.view(B, S, N, 6).permute(0, 2, 1, 3).contiguous()
+        ego_ctx = torch.cat([task, ego, actions], dim=-1)
+        return ego_ctx, agents_4d
+
     def forward(self, obs, action):
-        st = torch.cat([obs, action], dim=-1)
-        return self.network(st)
+        B = obs.shape[0]
+        S, N = self._S, self._N
+
+        ego_ctx, agents_4d = self._parse(obs)
+
+        exists = agents_4d[:, :, -1, 0:1]
+        car_feats = agents_4d.reshape(B, N, self.agent_feat_dim)
+
+        embeddings = self.agent_embs(car_feats)
+        embeddings = embeddings * exists
+        context = embeddings.sum(dim=1)
+
+        x = torch.cat([ego_ctx, context, action], dim=-1)
+        return self.net(x)
