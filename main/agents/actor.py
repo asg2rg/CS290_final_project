@@ -45,4 +45,4 @@ class Actor(nn.Module):
         # remove first 5 dims (target info and lane/speed/yaw), concat with rest of obs
         actor_in = torch.cat([tgt_emb, state_emb, obs[:, 5:]], dim=1)
         # print(f"tgt emb shape: {tgt_emb.shape}, state emb shape: {state_emb.shape}, actor_in shape: {actor_in.shape}")
-        return self.network(actor_in) * action_scale if not configs.CLAMP else self.network(actor_in)
+        return self.network(actor_in) * action_scale if configs.CLAMP else self.network(actor_in)

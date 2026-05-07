@@ -110,8 +110,8 @@ def main():
     stage = None
     if args.stage != "":
         stage = args.stage
-        eps_log_path += f"_stage_{stage}"
-        step_log_path += f"_stage_{stage}"
+        eps_log_path = f"stage_{stage}_" + eps_log_path
+        step_log_path = f"stage_{stage}_" + step_log_path
         print(f"Stage set to {stage}")
     if stage is not None:
         # load checkpoint from save path
