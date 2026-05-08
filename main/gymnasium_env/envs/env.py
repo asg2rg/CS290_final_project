@@ -145,11 +145,14 @@ class CarAndTargetEnv(gym.Env):
         for nearest_idx in nearest_indices:
             obs_parts.extend(self._build_agent_obs(self.active_agents[nearest_idx]))
 
+        false_heading = np.pi - self.car[2]
+        if false_heading > np.pi:
+            false_heading -= 2 * np.pi
+        if false_heading < -np.pi:
+            false_heading += 2 * np.pi
         for _ in range(configs.NEAREST_AGENTS - len(nearest_indices)):
-            obs_parts.extend([0.0, -1.0, 0.0, 0.0, 0.0, 0.0])
-        
-        # print(f"Car obs: {obs_parts}")
-
+            # obs_parts.extend([0.0, -1.0, 0.0, 0.0, 0.0, 0.0])
+            obs_parts.extend([0.0, car_road_id, min(1.0, self.car_speed - 10.0), 0.0, -300.0, false_heading]) # inject fake agent behind car in same lane
         return np.array(obs_parts, dtype=np.float32)
 
     def _get_nearest_agents(self, agent_idx, k=4):
