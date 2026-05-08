@@ -16,6 +16,7 @@ class Critic(nn.Module):
             nn.Linear(64, 64),
             nn.ReLU(),
         )
+        self.norm = nn.LayerNorm(64)
 
         self.car_obs = 4 + S * 3 + (S - 1) * 2
         # critic input = ego_ctx + deepsets_context + action
@@ -28,21 +29,22 @@ class Critic(nn.Module):
         )
         self._S = S
         self._N = N
+        self._F = F
 
     def _parse(self, obs):
         B = obs.shape[0]
-        S, N = self._S, self._N
+        S, N, F = self._S, self._N, self._F
         task    = obs[:, :4]
         ego     = obs[:, 4 : 4 + S*3]
-        ag_flat = obs[:, 4 + S*3 : 4 + S*3 + S*N*6]
-        actions = obs[:, 4 + S*3 + S*N*6 :]
-        agents_4d = ag_flat.view(B, S, N, 6).permute(0, 2, 1, 3).contiguous()
+        ag_flat = obs[:, 4 + S*3 : 4 + S*3 + S*N*F]
+        actions = obs[:, 4 + S*3 + S*N*F :]
+        agents_4d = ag_flat.view(B, S, N, F).permute(0, 2, 1, 3).contiguous()
         ego_ctx = torch.cat([task, ego, actions], dim=-1)
         return ego_ctx, agents_4d
 
     def forward(self, obs, action):
         B = obs.shape[0]
-        S, N = self._S, self._N
+        S, N, F = self._S, self._N, self._F
 
         ego_ctx, agents_4d = self._parse(obs)
 
@@ -52,6 +54,7 @@ class Critic(nn.Module):
         embeddings = self.agent_embs(car_feats)
         embeddings = embeddings * exists
         context = embeddings.sum(dim=1)
+        context = self.norm(context)
 
         x = torch.cat([ego_ctx, context, action], dim=-1)
         return self.net(x)
