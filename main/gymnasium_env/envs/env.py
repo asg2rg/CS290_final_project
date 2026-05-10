@@ -102,12 +102,9 @@ class CarAndTargetEnv(gym.Env):
         rel_dist = np.sqrt(dx**2 + dy**2)
         rel_angle = np.arctan2(dy, dx)
         spd = target_agent.speed
-        if target_agent.state[2] > np.pi/2 or target_agent.state[2] < -np.pi/2: # facing left mostly
-            spd *= -1
         if dx < 0:
             rel_dist *= -1
         if reference_entity[2] > np.pi/2 or reference_entity[2] < -np.pi/2: # facing left mostly
-            spd *= -1
             rel_dist *= -1 # if both facing left, then -x is front #### pending observing if this actually works better
         heading_error = rel_angle - target_agent.state[2]
         while heading_error > np.pi:
@@ -146,13 +143,13 @@ class CarAndTargetEnv(gym.Env):
             obs_parts.extend(self._build_agent_obs(self.active_agents[nearest_idx]))
 
         false_heading = np.pi - self.car[2]
-        if false_heading > np.pi:
+        while false_heading > np.pi:
             false_heading -= 2 * np.pi
-        if false_heading < -np.pi:
+        while false_heading < -np.pi:
             false_heading += 2 * np.pi
         for _ in range(configs.NEAREST_AGENTS - len(nearest_indices)):
             # obs_parts.extend([0.0, -1.0, 0.0, 0.0, 0.0, 0.0])
-            obs_parts.extend([0.0, car_road_id, min(1.0, self.car_speed - 10.0), 0.0, -300.0, false_heading]) # inject fake agent behind car in same lane
+            obs_parts.extend([0.0, car_road_id, min(1.0, self.car_speed), 0.0, -700.0, false_heading]) # inject fake agent behind car in same lane
         return np.array(obs_parts, dtype=np.float32)
 
     def _get_nearest_agents(self, agent_idx, k=4):
@@ -247,94 +244,88 @@ class CarAndTargetEnv(gym.Env):
         yaw = abs(self.car[2])
         yaw_deg = np.degrees(yaw)
         speed_diff = abs(self.car_speed - configs.TARGET_SPEED)
+        signed_speed_diff = self.car_speed - configs.TARGET_SPEED
         #### PENALTIES ####
         # collision penalty
         if self.collision_check():
-            col_rwd = -10.0
+            col_rwd = -4.0
             reward += col_rwd
         # OOB penalty
         if self.boundary_check():
-            oob_rwd = -3.0
+            oob_rwd = -1.5
             reward += oob_rwd
         # large penalty for yaw > 70 degrees
-        if yaw_deg > 90.0:
-            yaw_rwd = -5.0
+        if yaw_deg > 10.0:
+            yaw_rwd = max(yaw_deg * -0.02, -1.5)
             reward += yaw_rwd
-            # print(f"Reversed penalty: {yaw_rwd}")
-        elif yaw_deg > 60.0:
-            yaw_rwd = -3.0
-            reward += yaw_rwd
-            # print(f"Large yaw penalty: {yaw_rwd}")
-        elif yaw_deg > 30.0:
-            yaw_rwd = -1.0
-            reward += yaw_rwd
-        elif yaw_deg > 10.0:
-            yaw_rwd = -0.5
-            reward += yaw_rwd
-        if not configs.DISCRETE:
-            # penalize excessive speed
-            if abs(acc_cmd) > configs.MAX_ACC:
-                reward -= (abs(acc_cmd) - configs.MAX_ACC) * 0.1
-                # print(f"Excessive acceleration penalty: acc {acc_cmd}")
-            # penalize excessive turning
-            if abs(turn_cmd) > configs.MAX_ANG:
-                reward -= (abs(turn_cmd) - configs.MAX_ANG) * 0.3
-                # print(f"Excessive turning penalty: turn {turn_cmd}")
-            if speed_diff > 30.0:
-                spd_rwd = (speed_diff - 5.0) * -0.1
-                reward += spd_rwd
-                # print(f"Diff speed penalty: {spd_rwd}")
+        # penalize excessive speed
+        if abs(acc_cmd) > configs.MAX_ACC:
+            reward -= (abs(acc_cmd) - configs.MAX_ACC) * 0.1
+            # print(f"Excessive acceleration penalty: acc {acc_cmd}")
+        # penalize excessive turning
+        if abs(turn_cmd) > configs.MAX_ANG:
+            reward -= (abs(turn_cmd) - configs.MAX_ANG) * 0.3
+            # print(f"Excessive turning penalty: turn {turn_cmd}")
+        if speed_diff > 20.0:
+            spd_rwd = (speed_diff - 15.0) * -0.1
+            reward += spd_rwd
+            # print(f"Diff speed penalty: {spd_rwd}")
+        if signed_speed_diff < -20.0:
+            spd_rwd = (-signed_speed_diff - 20.0) * -0.05
+            reward += spd_rwd
+            # print(f"Excessive speed penalty: {spd_rwd}")
         
         #### REWARDS ####
-        # only if speed > 0
-        if self.car_speed < 0.1:
+        # only if moving forward
+        if self.car_speed < 5.0:
             return reward
         # positive distance reward
         dist_rwd = self.car[0] - self.last_x
         reward += min(dist_rwd * 0.01, 0.07)
         # reward close to target speed and straight
-        if yaw_deg < 3.0:
-            reward += 0.5
-        elif yaw_deg < 7.0:
-            reward += 0.2
-        speed_rwd = max(1.0 - speed_diff * 0.1, 0.0)
+        if speed_diff < 10.0:
+            if yaw_deg < 2.0:
+                reward += 0.3
+            elif yaw_deg < 5.0:
+                reward += 0.1
+        speed_rwd = max(1.0 - speed_diff * 0.15, 0.0)
         reward += speed_rwd
 
         # lane control
         lane = self.y_to_road_id(self.car[1])
         # penalize lane switching
         if lane != self.last_lane:
-            lane_change_rwd = -0.3
+            lane_change_rwd = -0.15
             reward += lane_change_rwd
             # print(f"Lane change penalty: {lane_change_rwd}")
             self.last_lane = lane
         # reward being in right lane
         if lane == configs.TARGET_LANE:
-            lane_rwd = 2.0
+            lane_rwd = 0.5
             reward += lane_rwd
         elif (configs.TARGET_LANE in [2, 3] and lane in [2, 3]) or (configs.TARGET_LANE in [0, 1] and lane in [0, 1]):
             lane_rwd = 0.1 # better than wrong
             reward += lane_rwd
         else:
             # wrong side of road or off road
-            lane_rwd = -1.5#1.0
+            lane_rwd = -1.0
             reward += lane_rwd
+
         # penalize far from road center
         dist_to_lane_center = abs(self.car[1] - self.road_center_y(lane)) # range 0~40
-        dist_center_rwd = 0.3-((dist_to_lane_center**2 / 5) * 0.005)
+        dist_center_rwd = 0.3-min(dist_to_lane_center**2 * 0.001, 0.6)
         reward += dist_center_rwd
         dist_to_tgt_center = abs(self.car[1] - self.road_center_y(configs.TARGET_LANE))
-        dist_tgt_center_rwd = 0.5-min((dist_to_tgt_center * 0.008), 1.0)
+        dist_tgt_center_rwd = 1.5 - (dist_to_tgt_center * 0.05)
         reward += dist_tgt_center_rwd
-        # print(dist_center_rwd)
             
         #### JERKING PENALTIES ####
         # penalize yaw
         if yaw_deg > 7.0:
-            yaw_rwd = yaw_deg * -0.05
+            yaw_rwd = yaw_deg * -0.03
             reward += yaw_rwd
             # print(f"Yaw penalty: {yaw_rwd}")
-        if abs(turn_cmd) > 0.8:
+        if abs(turn_cmd) > 0.3:
             turn_rwd = abs(turn_cmd) * -0.1
             reward += turn_rwd
         return reward

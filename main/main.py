@@ -107,44 +107,12 @@ def main():
         eval_loop(env, agent, args.exp_name)
         return
 
-    stage = None
-    if args.stage != "":
-        stage = args.stage
-        eps_log_path += f"_stage_{stage}"
-        step_log_path += f"_stage_{stage}"
-        print(f"Stage set to {stage}")
-    if stage is not None:
-        # load checkpoint from save path
-        if os.path.exists(save_path):
-            agent.load_checkpoint(save_path)
-            print(f"Loaded checkpoint from {save_path} for stage {stage}")
-        else:
-            print(f"No checkpoint: {save_path}")
-            if stage > 0:
-                print("Later stages should have a checkpoint to start from, check files. Continuing from empty model")
-            #     exit(1)
-    else:
-        stage = 5 # spawn random number of agents
-
     step = 0
     episode_cnt = 0
-    if stage != 5:
-        configs.AGENT_CNT = stage
     try:
         early_stop_rwds = np.zeros(100)
         while step < (G_STEPS):
-            # if step > G_STEPS * 0.8:
-            #     configs.AGENT_CNT = np.random.choice(configs.MAX_AGENTS + 1, p=[0.05, 0.1, 0.2, 0.3, 0.25, 0.1])
-            # elif step > G_STEPS * 0.8:
-            #     configs.AGENT_CNT = 4
-            # elif step > G_STEPS * 0.6:
-            #     configs.AGENT_CNT = 3
-            # elif step > G_STEPS * 0.3:
-            #     configs.AGENT_CNT = 2
-            # elif step > G_STEPS * 0.1:
-            #     configs.AGENT_CNT = 1
-            if stage == 5:
-                configs.AGENT_CNT = np.random.choice(configs.MAX_AGENTS + 1, p=[0.05, 0.1, 0.2, 0.3, 0.25, 0.1])
+            configs.AGENT_CNT = np.random.choice(configs.MAX_AGENTS + 1, p=[0.05, 0.1, 0.2, 0.3, 0.25, 0.1])
 
             obs, info = env.reset()
             agent.init_hists()
@@ -210,9 +178,6 @@ def main():
 
         env.close()
         agent.save_checkpoint(save_path)
-        # copy checkpoint with stage number
-        print(f"Copying checkpoint to {save_path}_stage_{stage}.")
-        shutil.copy(save_path, f"{save_path}_stage_{stage}")
     except KeyboardInterrupt:
         print("Training interrupted. Saving checkpoint...")
         agent.save_checkpoint(save_path)

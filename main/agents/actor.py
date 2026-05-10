@@ -28,7 +28,7 @@ class Actor(nn.Module):
             nn.LayerNorm(64),
             nn.ReLU(),
             nn.Linear(64, action_dim),
-            nn.Tanh() if not configs.DISCRETE and configs.CLAMP else nn.Identity()
+            nn.Tanh() if configs.CLAMP else nn.Identity()
         )
         # init to low weights
         for m in self.network.modules():

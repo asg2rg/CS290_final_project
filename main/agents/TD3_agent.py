@@ -15,9 +15,9 @@ class TD3Agent:
         if torch.cuda.is_available():
             print("Using GPU")
             self.device = torch.device("cuda")
-        elif torch.backends.mps.is_available():
-            print("Using Apple Silicon GPU")
-            self.device = torch.device("mps")
+        # elif torch.backends.mps.is_available():
+        #     print("Using Apple Silicon GPU")
+        #     self.device = torch.device("mps")
         else:
             print("Using CPU")
             self.device = torch.device("cpu")
@@ -32,7 +32,7 @@ class TD3Agent:
         self.critic_1_target = Critic(self.obs_dims, action_dim).to(self.device)
         self.critic_2_target = Critic(self.obs_dims, action_dim).to(self.device)
         self._update_target_networks(tau=1.0)  # hard update at initialization
-        self.replay_buffer = ReplayBuffer(capacity=500000)
+        self.replay_buffer = ReplayBuffer(capacity=800000)
 
         self.action_low = np.array([-configs.MAX_ANG, -configs.MAX_ACC], dtype=np.float32)
         self.action_high = np.array([configs.MAX_ANG, configs.MAX_ACC], dtype=np.float32)
@@ -202,7 +202,8 @@ class TD3Agent:
 
             # add l2 penalty for abs(action) - max_action
             max_action = torch.tensor(self.action_high, device=self.device).unsqueeze(0)
-            l2_penalty = ((act.abs() - max_action) ** 2).mean()
+            excess = torch.max(act - max_action, torch.tensor(0.0, device=self.device).unsqueeze(0))
+            l2_penalty = (excess ** 2).mean()
             actor_loss += 1e-3 * l2_penalty
 
             self.actor_optimizer.zero_grad()
