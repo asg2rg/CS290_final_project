@@ -67,7 +67,7 @@ def main():
     parser.add_argument('--discrete', action='store_true', default = False, help='Use discrete action space')
     parser.add_argument('--eval', action='store_true', default = False, help='Run evaluation loop after training')
     parser.add_argument('--exp-name', type=str, default="", help='Prefix for log and checkpoint files')
-    parser.add_argument('--stage', type=int, default="", help='Stage of the experiment')
+    parser.add_argument('--stage', type=int, default=5, help='Stage of the experiment')
     args = parser.parse_args()
     
     print("##############################################")
@@ -107,44 +107,12 @@ def main():
         eval_loop(env, agent, args.exp_name)
         return
 
-    stage = None
-    if args.stage != "":
-        stage = args.stage
-        eps_log_path = f"stage_{stage}_" + eps_log_path
-        step_log_path = f"stage_{stage}_" + step_log_path
-        print(f"Stage set to {stage}")
-    if stage is not None:
-        # load checkpoint from save path
-        if os.path.exists(save_path):
-            agent.load_checkpoint(save_path)
-            print(f"Loaded checkpoint from {save_path} for stage {stage}")
-        else:
-            print(f"No checkpoint: {save_path}")
-            if stage > 0:
-                print("Later stages should have a checkpoint to start from!")
-                exit(1)
-    else:
-        stage = 5 # spawn random number of agents
-
     step = 0
     episode_cnt = 0
-    if stage != 5:
-        configs.AGENT_CNT = stage
     try:
         early_stop_rwds = np.zeros(100)
         while step < (G_STEPS):
-            # if step > G_STEPS * 0.8:
-            #     configs.AGENT_CNT = np.random.choice(configs.MAX_AGENTS + 1, p=[0.05, 0.1, 0.2, 0.3, 0.25, 0.1])
-            # elif step > G_STEPS * 0.8:
-            #     configs.AGENT_CNT = 4
-            # elif step > G_STEPS * 0.6:
-            #     configs.AGENT_CNT = 3
-            # elif step > G_STEPS * 0.3:
-            #     configs.AGENT_CNT = 2
-            # elif step > G_STEPS * 0.1:
-            #     configs.AGENT_CNT = 1
-            if stage == 5:
-                configs.AGENT_CNT = np.random.choice(configs.MAX_AGENTS + 1, p=[0.05, 0.1, 0.2, 0.3, 0.25, 0.1])
+            configs.AGENT_CNT = np.random.choice(configs.MAX_AGENTS + 1, p=[0.05, 0.1, 0.2, 0.3, 0.25, 0.1])
 
             obs, info = env.reset()
             agent.init_hists()
@@ -203,16 +171,13 @@ def main():
                     eps_since_last_save = 0
             
             # early stop if past 100 episodes rewards average to over 1750
-            early_stop_rwds[episode_cnt % 100] = episode_reward
-            if episode_cnt >= 100 and np.mean(early_stop_rwds) > 1750:
-                print("Early stopping: Average reward over 100 episodes exceeds 1750.")
-                break
+            # early_stop_rwds[episode_cnt % 100] = episode_reward
+            # if episode_cnt >= 100 and np.mean(early_stop_rwds) > 1750:
+            #     print("Early stopping: Average reward over 100 episodes exceeds 1750.")
+            #     break
 
         env.close()
         agent.save_checkpoint(save_path)
-        # copy checkpoint with stage number
-        print(f"Copying checkpoint to {save_path}_stage_{stage}.")
-        shutil.copy(save_path, f"{save_path}_stage_{stage}")
     except KeyboardInterrupt:
         print("Training interrupted. Saving checkpoint...")
         agent.save_checkpoint(save_path)

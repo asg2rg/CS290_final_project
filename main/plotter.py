@@ -198,7 +198,7 @@ def parse_args():
 	parser.add_argument(
 		"--outdir",
 		type=Path,
-		default=Path("plots"),
+		default=None,
 		help="Directory to save generated plot images.",
 	)
 	parser.add_argument(
@@ -210,28 +210,29 @@ def parse_args():
 
 
 def main():
-    args = parse_args()
-    training_path = "td3_training_log.csv"
-    episode_path = "td3_episode_log.csv"
-    if args.prefix:
-        training_path = args.prefix + "_" + training_path
-        episode_path = args.prefix + "_" + episode_path
+	args = parse_args()
+	training_path = "td3_training_log.csv"
+	episode_path = "td3_episode_log.csv"
+	plot_path = args.outdir if args.outdir is not None else Path(f"plots/{args.prefix}/")
+	if args.prefix:
+		training_path = args.prefix + "_" + training_path
+		episode_path = args.prefix + "_" + episode_path
     # training_path = "logs/" + training_path
     # episode_path = "logs/" + episode_path
 
-    if not Path(training_path).is_file():
-        raise FileNotFoundError(f"Training CSV not found: {training_path}")
-    if not Path(episode_path).is_file():
-        raise FileNotFoundError(f"Episode CSV not found: {episode_path}")
+	if not Path(training_path).is_file():
+		raise FileNotFoundError(f"Training CSV not found: {training_path}")
+	if not Path(episode_path).is_file():
+		raise FileNotFoundError(f"Episode CSV not found: {episode_path}")
 
-    args.outdir.mkdir(parents=True, exist_ok=True)
+	plot_path.mkdir(parents=True, exist_ok=True)
 
-    _plot_training_losses(training_path, args.outdir, args.show)
-    _plot_episode_rewards(episode_path, args.outdir, args.show)
-    _plot_episode_distance(episode_path, args.outdir, args.show)
-    _plot_episode_steps(episode_path, args.outdir, args.show)
+	_plot_training_losses(training_path, plot_path, args.show)
+	_plot_episode_rewards(episode_path, plot_path, args.show)
+	_plot_episode_distance(episode_path, plot_path, args.show)
+	_plot_episode_steps(episode_path, plot_path, args.show)
 
-    print(f"Saved plots to: {args.outdir.resolve()}")
+	print(f"Saved plots to: {plot_path.resolve()}")
 
 
 if __name__ == "__main__":

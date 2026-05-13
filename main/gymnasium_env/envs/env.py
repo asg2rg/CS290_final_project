@@ -49,6 +49,7 @@ class CarAndTargetEnv(gym.Env):
         self.car = np.array([100.0, 100.0, 0.0], dtype=np.float32) # car init x at 100
         self.agents = [AgentCar(id = i, x=350.0 + i*100, y=self.road_center_y(i%4), heading=self.heading_for_lane(i%4), speed=agent_1_velocity) for i in range(configs.MAX_AGENTS)]
         self.active_agents = self.agents[:configs.AGENT_CNT]
+        self.ghost_agents = []
         # self.agents[0].heading *= -1
         # self.agents[1].heading *= -1
         
@@ -98,23 +99,56 @@ class CarAndTargetEnv(gym.Env):
         agent_road_id = self.y_to_road_id(target_agent.state[1])
         dx = target_agent.state[0] - reference_entity[0]
         dy = target_agent.state[1] - reference_entity[1]
-        # positive dist if in front of reference entity, negative if behind
         rel_dist = np.sqrt(dx**2 + dy**2)
         rel_angle = np.arctan2(dy, dx)
         spd = target_agent.speed
-        if target_agent.state[2] > np.pi/2 or target_agent.state[2] < -np.pi/2: # facing left mostly
-            spd *= -1
-        if dx < 0:
-            rel_dist *= -1
-        if reference_entity[2] > np.pi/2 or reference_entity[2] < -np.pi/2: # facing left mostly
-            spd *= -1
-            rel_dist *= -1 # if both facing left, then -x is front #### pending observing if this actually works better
+        # if dx < 0:
+        #     rel_dist *= -1
+        # if reference_entity[2] > np.pi/2 or reference_entity[2] < -np.pi/2: # facing left mostly
+        #     rel_dist *= -1 # if both facing left, then -x is front #### pending observing if this actually works better
         heading_error = rel_angle - target_agent.state[2]
         while heading_error > np.pi:
             heading_error -= 2 * np.pi
         while heading_error < -np.pi:
             heading_error += 2 * np.pi
         return [1.0, agent_road_id, spd, target_agent.state[2], rel_dist, heading_error]
+    
+    def _init_ghost_agents(self, count):
+        self.ghost_agents = []
+        for i in range(count):
+            ghost_x = -450.0 - 50.0 * i
+            ghost_y = self.road_center_y(2)
+            ghost_heading = 0.0
+            ghost_speed = 25.0
+            self.ghost_agents.append({
+                "state": np.array([ghost_x, ghost_y, ghost_heading], dtype=np.float32),
+                "speed": ghost_speed,
+            })
+
+    def _update_ghost_agents(self):
+        for ghost in self.ghost_agents:
+            heading = ghost["state"][2]
+            ghost["state"][0] += ghost["speed"] * dt * np.cos(heading)
+            ghost["state"][1] += ghost["speed"] * dt * np.sin(heading)
+
+    def _extend_ghost_agent_obs(self, idx):
+        # use persistent per-episode ghost agents for observation padding
+        ghost = self.ghost_agents[idx]
+        ghost_x = ghost["state"][0]
+        ghost_y = ghost["state"][1]
+        ghost_speed = ghost["speed"]
+        ghost_heading = ghost["state"][2]
+        ghost_lane = self.y_to_road_id(ghost_y)
+        dx = ghost_x - self.car[0]
+        dy = ghost_y - self.car[1]
+        rel_dist = np.sqrt(dx**2 + dy**2)
+        rel_angle = np.arctan2(dy, dx)
+        heading_error = rel_angle - self.car[2]
+        while heading_error > np.pi:
+            heading_error -= 2 * np.pi
+        while heading_error < -np.pi:
+            heading_error += 2 * np.pi
+        return [1.0, ghost_lane, ghost_speed, ghost_heading, rel_dist, heading_error]
 
     def _update_agent_side_counts(self):
         configs.AGENTS_FRONT = sum(1 for agent in self.active_agents if agent.state[0] > self.car[0])
@@ -141,15 +175,24 @@ class CarAndTargetEnv(gym.Env):
                 agent_distances.append((dist, i))
             agent_distances.sort()
             nearest_indices = [i for _, i in agent_distances[:configs.NEAREST_AGENTS]]
+            # print(f"Number of agents in obs: {len(self.active_agents)}, nearest agent indices: {nearest_indices}")
+            # print(f"Number of ghosts: {configs.NEAREST_AGENTS - len(nearest_indices)}")
 
         for nearest_idx in nearest_indices:
             obs_parts.extend(self._build_agent_obs(self.active_agents[nearest_idx]))
 
-        for _ in range(configs.NEAREST_AGENTS - len(nearest_indices)):
-            obs_parts.extend([0.0, -1.0, 0.0, 0.0, 0.0, 0.0])
+        false_heading = np.pi - self.car[2]
+        while false_heading > np.pi:
+            false_heading -= 2 * np.pi
+        while false_heading < -np.pi:
+            false_heading += 2 * np.pi
+        ghost_slots = configs.NEAREST_AGENTS - len(nearest_indices)
+        for i in range(ghost_slots):
+            # obs_parts.extend([0.0, -1.0, 0.0, 0.0, 0.0, 0.0])
+            ghost_obs = self._extend_ghost_agent_obs(i)
+            obs_parts.extend(ghost_obs)
         
-        # print(f"Car obs: {obs_parts}")
-
+        # print(f"Car obs: {configs.TARGET_LANE}, {configs.TARGET_SPEED}, {configs.AGENTS_FRONT}, {configs.AGENTS_BEHIND}, {obs_parts[:3]},\nNearest agents obs: {obs_parts[3:3+6*len(nearest_indices)]},\nGhost agents obs: {obs_parts[3+6*len(nearest_indices):]}")
         return np.array(obs_parts, dtype=np.float32)
 
     def _get_nearest_agents(self, agent_idx, k=4):
@@ -223,6 +266,8 @@ class CarAndTargetEnv(gym.Env):
             spawn_agents = np.random.choice(configs.MAX_AGENTS, p=[0.1, 0.2, 0.3, 0.3, 0.1]) + 1
         
         self.active_agents = self.agents[:spawn_agents]
+        used_real_slots = min(len(self.active_agents), configs.NEAREST_AGENTS)
+        self._init_ghost_agents(configs.NEAREST_AGENTS - used_real_slots)
 
         for i, agent in enumerate(self.active_agents):
             lane = np.random.choice(4)
@@ -238,7 +283,7 @@ class CarAndTargetEnv(gym.Env):
             self._render_frame()
 
         return self._get_obs(), self._get_info()
-
+    
     def reward_calc(self, turn_cmd, acc_cmd):
         reward = -0.1 # timestep penalty
         yaw = abs(self.car[2])
@@ -247,7 +292,7 @@ class CarAndTargetEnv(gym.Env):
         #### PENALTIES ####
         # collision penalty
         if self.collision_check():
-            col_rwd = -10.0
+            col_rwd = -7.0
             reward += col_rwd
         # OOB penalty
         if self.boundary_check():
@@ -263,12 +308,12 @@ class CarAndTargetEnv(gym.Env):
             reward += yaw_rwd
             # print(f"Large yaw penalty: {yaw_rwd}")
         elif yaw_deg > 30.0:
-            yaw_rwd = -1.0
+            yaw_rwd = -2.0
             reward += yaw_rwd
         elif yaw_deg > 10.0:
-            yaw_rwd = -0.5
+            yaw_rwd = -1.0
             reward += yaw_rwd
-        if not configs.DISCRETE:
+        if not configs.DISCRETE and not configs.EVAL:
             # penalize excessive speed
             if abs(acc_cmd) > configs.MAX_ACC:
                 reward -= (abs(acc_cmd) - configs.MAX_ACC) * 0.1
@@ -277,7 +322,7 @@ class CarAndTargetEnv(gym.Env):
             if abs(turn_cmd) > configs.MAX_ANG:
                 reward -= (abs(turn_cmd) - configs.MAX_ANG) * 0.3
                 # print(f"Excessive turning penalty: turn {turn_cmd}")
-            if speed_diff > 30.0:
+            if speed_diff > 10.0:
                 spd_rwd = (speed_diff - 5.0) * -0.1
                 reward += spd_rwd
                 # print(f"Diff speed penalty: {spd_rwd}")
@@ -288,41 +333,39 @@ class CarAndTargetEnv(gym.Env):
             return reward
         # positive distance reward
         dist_rwd = self.car[0] - self.last_x
-        reward += min(dist_rwd * 0.01, 0.07)
+        reward += min(dist_rwd * 0.01, 0.1)
         # reward close to target speed and straight
         if yaw_deg < 3.0:
             reward += 0.5
         elif yaw_deg < 7.0:
             reward += 0.2
-        speed_rwd = max(1.0 - speed_diff * 0.1, 0.0)
+        speed_rwd = max(2.5 - speed_diff * 0.5, 0.0)
         reward += speed_rwd
 
         # lane control
         lane = self.y_to_road_id(self.car[1])
         # penalize lane switching
-        if lane != self.last_lane:
-            lane_change_rwd = -0.3
-            reward += lane_change_rwd
-            # print(f"Lane change penalty: {lane_change_rwd}")
-            self.last_lane = lane
+        # if lane != self.last_lane:
+        #     lane_change_rwd = -0.3#5
+        #     reward += lane_change_rwd
+        #     # print(f"Lane change penalty: {lane_change_rwd}")
+        #     self.last_lane = lane
         # reward being in right lane
         if lane == configs.TARGET_LANE:
-            lane_rwd = 2.0
+            lane_rwd = 3.0
             reward += lane_rwd
         elif (configs.TARGET_LANE in [2, 3] and lane in [2, 3]) or (configs.TARGET_LANE in [0, 1] and lane in [0, 1]):
-            lane_rwd = 0.1 # better than wrong
-            reward += lane_rwd
+            reward += -0.1#0.7
         else:
             # wrong side of road or off road
-            lane_rwd = -1.5#1.0
-            reward += lane_rwd
+            reward += -1.0
         # penalize far from road center
-        dist_to_lane_center = abs(self.car[1] - self.road_center_y(lane)) # range 0~40
-        dist_center_rwd = 0.3-((dist_to_lane_center**2 / 5) * 0.005)
+        dist_to_lane_center = abs(self.car[1] - self.road_center_y(lane)) if lane != -1 else 50 # range 0~40
+        dist_center_rwd = 0.3-((dist_to_lane_center**2 / 10) * 0.01)
         reward += dist_center_rwd
-        dist_to_tgt_center = abs(self.car[1] - self.road_center_y(configs.TARGET_LANE))
-        dist_tgt_center_rwd = 0.5-min((dist_to_tgt_center * 0.008), 1.0)
-        reward += dist_tgt_center_rwd
+        # dist_to_tgt_center = abs(self.car[1] - self.road_center_y(configs.TARGET_LANE)) # range 0~120
+        # dist_tgt_rwd = 0.6-((dist_to_tgt_center**2 / 10) * 0.005)
+        # reward += dist_tgt_rwd
         # print(dist_center_rwd)
             
         #### JERKING PENALTIES ####
@@ -331,11 +374,11 @@ class CarAndTargetEnv(gym.Env):
             yaw_rwd = yaw_deg * -0.05
             reward += yaw_rwd
             # print(f"Yaw penalty: {yaw_rwd}")
-        if abs(turn_cmd) > 0.8:
+        if abs(turn_cmd) > 1.0:
             turn_rwd = abs(turn_cmd) * -0.1
             reward += turn_rwd
         return reward
-
+    
     def boundary_check(self):
         if self.car[1] < self.road_top - 20.0:
             # print("Too high")
@@ -477,9 +520,9 @@ class CarAndTargetEnv(gym.Env):
             alpha += 2*np.pi
         
         # move forward
-        # if self.collision_check():
-        #     speed *= 0.05
-        #     alpha *= -0.5
+        if self.collision_check():
+            speed *= 0.05
+            alpha *= -0.5
         self.car[0] += dt * speed * np.cos(alpha)
         self.car[1] += dt * speed * np.sin(alpha)
         self.car[2] = alpha
@@ -497,6 +540,8 @@ class CarAndTargetEnv(gym.Env):
             agent.update_state(turn_cmd, acc_cmd, dt)
             agent.move(dt)
             self.respawn_agent_if_offscreen(i)
+
+        self._update_ghost_agents()
 
         self._update_agent_side_counts()
 

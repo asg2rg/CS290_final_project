@@ -15,9 +15,9 @@ class TD3Agent:
         if torch.cuda.is_available():
             print("Using GPU")
             self.device = torch.device("cuda")
-        elif torch.backends.mps.is_available():
-            print("Using Apple Silicon GPU")
-            self.device = torch.device("mps")
+        # elif torch.backends.mps.is_available():
+        #     print("Using Apple Silicon GPU")
+        #     self.device = torch.device("mps")
         else:
             print("Using CPU")
             self.device = torch.device("cpu")
@@ -32,7 +32,7 @@ class TD3Agent:
         self.critic_1_target = Critic(self.obs_dims, action_dim).to(self.device)
         self.critic_2_target = Critic(self.obs_dims, action_dim).to(self.device)
         self._update_target_networks(tau=1.0)  # hard update at initialization
-        self.replay_buffer = ReplayBuffer(capacity=500000)
+        self.replay_buffer = ReplayBuffer(capacity=configs.CAPACITy)
 
         self.action_low = np.array([-configs.MAX_ANG, -configs.MAX_ACC], dtype=np.float32)
         self.action_high = np.array([configs.MAX_ANG, configs.MAX_ACC], dtype=np.float32)
@@ -49,7 +49,7 @@ class TD3Agent:
         self.tau = 0.005
         self.noise_std = 0.2
         self.noise_clip = 0.5
-        self.grad_clip = 5.0
+        self.grad_clip = 3.0
 
         self.epsilon = configs.EPS_START
         self.epsilon_min = configs.EPS_MIN
@@ -111,6 +111,10 @@ class TD3Agent:
         
         obs_np = np.concatenate(parts, axis=0)
         obs_t = torch.FloatTensor(obs_np).unsqueeze(0).to(self.device)
+
+        # print(obs_t.shape, obs_t.cpu().numpy())
+        # input()
+
         return obs_t
 
     def add_transition(self, obs_t, action, reward, next_obs_t, done):
@@ -200,10 +204,12 @@ class TD3Agent:
             act = self.actor(batch_obs)
             actor_loss = -self.critic_1(batch_obs, act).mean()
 
-            # add l2 penalty for abs(action) - max_action
-            max_action = torch.tensor(self.action_high, device=self.device).unsqueeze(0)
-            l2_penalty = ((act.abs() - max_action) ** 2).mean()
-            actor_loss += 1e-3 * l2_penalty
+            # add l2 penalty for abs(action) - max_action (only when unclamped)
+            if not configs.CLAMP:
+                max_action = torch.tensor(self.action_high, device=self.device).unsqueeze(0)
+                excess = torch.max(act - max_action, torch.tensor(0.0, device=self.device).unsqueeze(0))
+                l2_penalty = (excess ** 2).mean()
+                actor_loss += 1e-3 * l2_penalty
 
             self.actor_optimizer.zero_grad()
             actor_loss.backward()
