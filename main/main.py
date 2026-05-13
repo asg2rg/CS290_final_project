@@ -171,10 +171,10 @@ def main():
                     eps_since_last_save = 0
             
             # early stop if past 100 episodes rewards average to over 1750
-            early_stop_rwds[episode_cnt % 100] = episode_reward
-            if episode_cnt >= 100 and np.mean(early_stop_rwds) > 1750:
-                print("Early stopping: Average reward over 100 episodes exceeds 1750.")
-                break
+            # early_stop_rwds[episode_cnt % 100] = episode_reward
+            # if episode_cnt >= 100 and np.mean(early_stop_rwds) > 1750:
+            #     print("Early stopping: Average reward over 100 episodes exceeds 1750.")
+            #     break
 
         env.close()
         agent.save_checkpoint(save_path)
