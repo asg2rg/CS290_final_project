@@ -68,6 +68,7 @@ def main():
     parser.add_argument('--eval', action='store_true', default = False, help='Run evaluation loop after training')
     parser.add_argument('--exp-name', type=str, default="", help='Prefix for log and checkpoint files')
     parser.add_argument('--stage', type=int, default=5, help='Stage of the experiment')
+    parser.add_argument('--simple', action='store_true', default=False, help='Use simple actor and critic models with fewer parameters')
     args = parser.parse_args()
     
     print("##############################################")
@@ -94,6 +95,12 @@ def main():
     if args.eval:
         configs.EVAL = True
         print("Eval mode set")
+    if args.simple:
+        configs.SIMPLE_MODEL = True
+        save_path = "simple_" + save_path
+        step_log_path = "simple_" + step_log_path
+        eps_log_path = "simple_" + eps_log_path
+        print("Using simple actor and critic models with fewer parameters.")
     print("##############################################")
     
     env = CarAndTargetEnv(render_mode="human" if configs.RENDER else None, max_episode_steps=500)
@@ -171,10 +178,10 @@ def main():
                     eps_since_last_save = 0
             
             # early stop if past 100 episodes rewards average to over 1750
-            early_stop_rwds[episode_cnt % 100] = episode_reward
-            if episode_cnt >= 100 and np.mean(early_stop_rwds) > 1750:
-                print("Early stopping: Average reward over 100 episodes exceeds 1750.")
-                break
+            # early_stop_rwds[episode_cnt % 100] = episode_reward
+            # if episode_cnt >= 100 and np.mean(early_stop_rwds) > 1750:
+            #     print("Early stopping: Average reward over 100 episodes exceeds 1750.")
+            #     break
 
         env.close()
         agent.save_checkpoint(save_path)
