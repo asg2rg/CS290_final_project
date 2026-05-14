@@ -1,10 +1,12 @@
 EVAL = False
+CPU_ONLY = False
 
 # gym setup
 WINDOW_H = 500
 WINDOW_W = 1200
 CAM_X = 250
 RENDER = False
+SIMPLE_REWARD = True
 
     # road
 ROAD_CNT = 4
@@ -80,7 +82,7 @@ EPS_DECAY = 0.999
 DISCOUNT = 0.97
 BATCH_SIZE = 1024
 
-CAPACITy = 800_000
+CAPACITY = 800_000
 
 def verify_setup(dec = EPS_DECAY):
     import math

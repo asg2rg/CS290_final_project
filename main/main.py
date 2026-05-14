@@ -68,11 +68,20 @@ def main():
     parser.add_argument('--eval', action='store_true', default = False, help='Run evaluation loop after training')
     parser.add_argument('--exp-name', type=str, default="", help='Prefix for log and checkpoint files')
     parser.add_argument('--stage', type=int, default=5, help='Stage of the experiment')
+    parser.add_argument('--simple-rwd', action='store_true', default=False, help='Use simplified reward function reward')
+    parser.add_argument('--cpu', action='store_true', default=False, help='Force training on CPU even if GPU is available')
+    parser.add_argument('--b', type=int, default=1024, help='Batch size for training (default: 1024)')
     args = parser.parse_args()
     
     print("##############################################")
     if args.render:
         configs.RENDER = True
+    if args.cpu:
+        configs.CPU_ONLY = True
+        print("Forcing training on CPU.")
+    if args.simple_rwd:
+        configs.SIMPLE_REWARD = True
+        print("Using simplified reward with discrete components for yaw and speed control")
     if not args.unclamp:
         configs.CLAMP = True
         save_path = "clamped_" + save_path
@@ -94,6 +103,9 @@ def main():
     if args.eval:
         configs.EVAL = True
         print("Eval mode set")
+    if args.b != 1024:
+        configs.BATCH_SIZE = args.b
+        print(f"Batch size set to {configs.BATCH_SIZE}")
     print("##############################################")
     
     env = CarAndTargetEnv(render_mode="human" if configs.RENDER else None, max_episode_steps=500)
@@ -134,7 +146,7 @@ def main():
                 agent.update_hists(next_obs, action)
                 done = terminated or truncated
                 r_n_obs = agent.build_replay_frame()
-                agent.add_transition(r_obs, action, reward, r_n_obs, done) # internally advances histories
+                agent.add_transition(r_obs, action, reward, r_n_obs, done)
 
                 # logging
                 episode_reward += reward

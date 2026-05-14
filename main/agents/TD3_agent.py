@@ -12,7 +12,7 @@ class TD3Agent:
         self.state_dim = state_dim
         self.act_dim = action_dim
         self.obs_dims = configs.STACK_OBS_DIM
-        if torch.cuda.is_available():
+        if torch.cuda.is_available() and not configs.CPU_ONLY:
             print("Using GPU")
             self.device = torch.device("cuda")
         # elif torch.backends.mps.is_available():
@@ -32,7 +32,7 @@ class TD3Agent:
         self.critic_1_target = Critic(self.obs_dims, action_dim).to(self.device)
         self.critic_2_target = Critic(self.obs_dims, action_dim).to(self.device)
         self._update_target_networks(tau=1.0)  # hard update at initialization
-        self.replay_buffer = ReplayBuffer(capacity=configs.CAPACITy)
+        self.replay_buffer = ReplayBuffer(capacity=configs.CAPACITY)
 
         self.action_low = np.array([-configs.MAX_ANG, -configs.MAX_ACC], dtype=np.float32)
         self.action_high = np.array([configs.MAX_ANG, configs.MAX_ACC], dtype=np.float32)

@@ -345,27 +345,24 @@ class CarAndTargetEnv(gym.Env):
         # lane control
         lane = self.y_to_road_id(self.car[1])
         # penalize lane switching
-        # if lane != self.last_lane:
-        #     lane_change_rwd = -0.3#5
-        #     reward += lane_change_rwd
-        #     # print(f"Lane change penalty: {lane_change_rwd}")
-        #     self.last_lane = lane
+        if lane != self.last_lane:
+            lane_change_rwd = -0.3#5
+            reward += lane_change_rwd
+            # print(f"Lane change penalty: {lane_change_rwd}")
+            self.last_lane = lane
         # reward being in right lane
         if lane == configs.TARGET_LANE:
             lane_rwd = 3.0
             reward += lane_rwd
         elif (configs.TARGET_LANE in [2, 3] and lane in [2, 3]) or (configs.TARGET_LANE in [0, 1] and lane in [0, 1]):
-            reward += -0.1#0.7
+            reward += -0.0#0.7
         else:
             # wrong side of road or off road
             reward += -1.0
         # penalize far from road center
-        dist_to_lane_center = abs(self.car[1] - self.road_center_y(lane)) if lane != -1 else 50 # range 0~40
-        dist_center_rwd = 0.3-((dist_to_lane_center**2 / 10) * 0.01)
+        dist_to_lane_center = abs(self.car[1] - self.road_center_y(lane)) # range 0~40
+        dist_center_rwd = 0.3-((dist_to_lane_center**2 / 10) * 0.005)
         reward += dist_center_rwd
-        # dist_to_tgt_center = abs(self.car[1] - self.road_center_y(configs.TARGET_LANE)) # range 0~120
-        # dist_tgt_rwd = 0.6-((dist_to_tgt_center**2 / 10) * 0.005)
-        # reward += dist_tgt_rwd
         # print(dist_center_rwd)
             
         #### JERKING PENALTIES ####
@@ -377,6 +374,49 @@ class CarAndTargetEnv(gym.Env):
         if abs(turn_cmd) > 1.0:
             turn_rwd = abs(turn_cmd) * -0.1
             reward += turn_rwd
+        return reward
+    
+    def reward_simple(self, turn_cmd, acc_cmd):
+        reward = -0.1
+        # legal actions
+        if self.collision_check():
+            reward -= 7.0
+        if self.boundary_check():
+            reward -= 3.0
+        if not configs.DISCRETE and not configs.EVAL and not configs.CLAMP:
+            # penalize excessive speed
+            if abs(acc_cmd) > configs.MAX_ACC:
+                reward -= (abs(acc_cmd) - configs.MAX_ACC) * 0.1
+                # print(f"Excessive acceleration penalty: acc {acc_cmd}")
+            # penalize excessive turning
+            if abs(turn_cmd) > configs.MAX_ANG:
+                reward -= (abs(turn_cmd) - configs.MAX_ANG) * 0.3
+                # print(f"Excessive turning penalty: turn {turn_cmd}")
+
+        # lane
+        lane = self.y_to_road_id(self.car[1])
+        if lane == configs.TARGET_LANE:
+            reward += 2.0
+        elif (configs.TARGET_LANE in [2, 3] and lane in [2, 3]) or (configs.TARGET_LANE in [0, 1] and lane in [0, 1]):
+            reward += 0.5
+        else:
+            reward -= 1.0
+        # centering
+        dist_to_lane_center = abs(self.car[1] - self.road_center_y(lane)) # range 0~40
+        reward += max(0.3-((dist_to_lane_center**2 / 10) * 0.005), -0.3)
+        # speed
+        speed_diff = abs(self.car_speed - configs.TARGET_SPEED)
+        if speed_diff < 5.0:
+            reward += 2.0
+        elif speed_diff < 10.0:
+            reward += 1.0
+        elif speed_diff > 20.0:
+            reward -= 0.5
+        # yaw
+        yaw = np.degrees(abs(self.car[2]))
+        reward += max(0.3 - (yaw * 0.05), -1.0)
+        if yaw > 45.0:
+            reward -= 1.0
         return reward
     
     def boundary_check(self):
@@ -545,7 +585,7 @@ class CarAndTargetEnv(gym.Env):
 
         self._update_agent_side_counts()
 
-        reward = self.reward_calc(turn_delta, acc_delta)
+        reward = self.reward_calc(turn_delta, acc_delta) if not configs.SIMPLE_REWARD else self.reward_simple(turn_delta, acc_delta)
         truncated = self.step_count >= self.max_episode_steps
         self.eps_reward += reward
         self.last_x = self.car[0]
