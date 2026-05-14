@@ -71,6 +71,7 @@ def main():
     parser.add_argument('--simple-rwd', action='store_true', default=False, help='Use simplified reward function reward')
     parser.add_argument('--cpu', action='store_true', default=False, help='Force training on CPU even if GPU is available')
     parser.add_argument('--b', type=int, default=1024, help='Batch size for training (default: 1024)')
+    parser.add_argument('--simple', action='store_true', default=False, help='Use simple actor and critic models with fewer parameters')
     args = parser.parse_args()
     
     print("##############################################")
@@ -106,6 +107,12 @@ def main():
     if args.b != 1024:
         configs.BATCH_SIZE = args.b
         print(f"Batch size set to {configs.BATCH_SIZE}")
+    if args.simple:
+        configs.SIMPLE_MODEL = True
+        save_path = "simple_" + save_path
+        step_log_path = "simple_" + step_log_path
+        eps_log_path = "simple_" + eps_log_path
+        print("Using simple actor and critic models with fewer parameters.")
     print("##############################################")
     
     env = CarAndTargetEnv(render_mode="human" if configs.RENDER else None, max_episode_steps=500)

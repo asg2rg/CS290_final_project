@@ -355,13 +355,13 @@ class CarAndTargetEnv(gym.Env):
             lane_rwd = 3.0
             reward += lane_rwd
         elif (configs.TARGET_LANE in [2, 3] and lane in [2, 3]) or (configs.TARGET_LANE in [0, 1] and lane in [0, 1]):
-            reward += -0.0#0.7
+            reward += -0.2#0.7
         else:
             # wrong side of road or off road
-            reward += -1.0
+            reward += -1.5
         # penalize far from road center
-        dist_to_lane_center = abs(self.car[1] - self.road_center_y(lane)) # range 0~40
-        dist_center_rwd = 0.3-((dist_to_lane_center**2 / 10) * 0.005)
+        dist_to_lane_center = abs(self.car[1] - self.road_center_y(lane)) if lane != -1 else 50 # range 0~40
+        dist_center_rwd = 0.7-min(1.4, (dist_to_lane_center**2) * 0.0015)
         reward += dist_center_rwd
         # print(dist_center_rwd)
             

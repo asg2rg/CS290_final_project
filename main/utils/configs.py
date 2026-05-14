@@ -83,6 +83,7 @@ DISCOUNT = 0.97
 BATCH_SIZE = 1024
 
 CAPACITY = 800_000
+SIMPLE_MODEL = False
 
 def verify_setup(dec = EPS_DECAY):
     import math
