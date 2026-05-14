@@ -1,13 +1,17 @@
 import torch
 import numpy as np
-from agents.actor import Actor
-from agents.critic import Critic
 from utils.replay import ReplayBuffer
 import utils.configs as configs
 from utils.configs import G_STEPS
 
 class TD3Agent:
     def __init__(self, state_dim = configs.OBS_ELEMENTS_PER_TIMESTEP, action_dim = 2, actor_lr=1e-4, critic_lr=3e-4):
+        if configs.SIMPLE_MODEL:
+            from agents.simple_actor import Actor
+            from agents.simple_critic import Critic
+        else:
+            from agents.actor import Actor
+            from agents.critic import Critic
         self.stack_sz = configs.STACK_SZ
         self.state_dim = state_dim
         self.act_dim = action_dim
