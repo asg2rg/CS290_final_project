@@ -17,9 +17,6 @@ def eval_loop(env, agent, prefix):
     ckpt = "td3_checkpoint.pth"
     if configs.DISCRETE:
         raise NotImplementedError("TD3 with discrete action space is not implemented yet.")
-    if configs.CLAMP:
-        ckpt = "clamped_" + ckpt
-        eval_log_path = "clamped_" + eval_log_path
     if prefix != "":
         ckpt = prefix + "_" + ckpt
         eval_log_path = prefix + "_" + eval_log_path
@@ -72,6 +69,7 @@ def main():
     parser.add_argument('--cpu', action='store_true', default=False, help='Force training on CPU even if GPU is available')
     parser.add_argument('--b', type=int, default=1024, help='Batch size for training (default: 1024)')
     parser.add_argument('--simple', action='store_true', default=False, help='Use simple actor and critic models with fewer parameters')
+    parser.add_argument('--norm', action='store_true', default=False, help='Normalize observations and actions for the networks')
     args = parser.parse_args()
     
     print("##############################################")
@@ -83,6 +81,12 @@ def main():
     if args.simple_rwd:
         configs.SIMPLE_REWARD = True
         print("Using simplified reward with discrete components for yaw and speed control")
+    if args.norm:
+        configs.NORM = True
+        save_path = "norm_" + save_path
+        step_log_path = "norm_" + step_log_path
+        eps_log_path = "norm_" + eps_log_path
+        print("Normalizing observations and actions for the networks. This is recommended for stable training.")
     if not args.unclamp:
         configs.CLAMP = True
         save_path = "clamped_" + save_path
@@ -100,7 +104,6 @@ def main():
         save_path = args.exp_name + "_" + save_path
         step_log_path = args.exp_name + "_" + step_log_path
         eps_log_path = args.exp_name + "_" + eps_log_path
-        print(f"Files will be saved to:\n\tCheckpoint: {save_path}\n\tStep log: {step_log_path}\n\tEpisode log: {eps_log_path}")
     if args.eval:
         configs.EVAL = True
         print("Eval mode set")
@@ -113,6 +116,8 @@ def main():
         step_log_path = "simple_" + step_log_path
         eps_log_path = "simple_" + eps_log_path
         print("Using simple actor and critic models with fewer parameters.")
+    
+    print(f"\nFiles will be saved to:\n\tCheckpoint: {save_path}\n\tStep log: {step_log_path}\n\tEpisode log: {eps_log_path}")
     print("##############################################")
     
     env = CarAndTargetEnv(render_mode="human" if configs.RENDER else None, max_episode_steps=500)
@@ -123,7 +128,9 @@ def main():
         raise NotImplementedError("TD3 with discrete action space is not implemented yet.")
     
     if configs.EVAL:
-        eval_loop(env, agent, args.exp_name)
+        # remove "td3_checkpoint.pth" from path for prefix
+        ckpt_prefix = save_path.replace("td3_checkpoint.pth", "").rstrip("_")
+        eval_loop(env, agent, ckpt_prefix)
         return
 
     step = 0

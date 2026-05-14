@@ -412,6 +412,9 @@ class CarAndTargetEnv(gym.Env):
             reward += 1.0
         elif speed_diff > 20.0:
             reward -= 0.5
+        # forward
+        dist_rwd = self.car[0] - self.last_x
+        reward += min(dist_rwd * 0.01, 0.1)
         # yaw
         yaw = np.degrees(abs(self.car[2]))
         reward += max(0.3 - (yaw * 0.05), -1.0)

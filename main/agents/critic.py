@@ -2,6 +2,7 @@
 import torch
 import torch.nn as nn
 import utils.configs as configs
+from utils.utils import obs_norm, obs_denorm, action_norm, action_denorm
 
 class Critic(nn.Module):
     def __init__(self, obs_dim, action_dim):
@@ -71,6 +72,9 @@ class Critic(nn.Module):
                 nn.init.zeros_(m.bias)
 
     def forward(self, obs, action):
+        if configs.NORM:
+            obs = obs_norm(obs)
+            action = action_norm(action)
         action_scale = torch.tensor([configs.MAX_ANG, configs.MAX_ACC], dtype=obs.dtype, device=obs.device)
         tgt_in = obs[:, :2]
         # print(f"tgt_in: {tgt_in[0]}")

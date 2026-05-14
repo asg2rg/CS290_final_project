@@ -85,6 +85,8 @@ BATCH_SIZE = 1024
 CAPACITY = 800_000
 SIMPLE_MODEL = False
 
+NORM = False
+
 def verify_setup(dec = EPS_DECAY):
     import math
     # check how many steps to decay from EPS_START to EPS_MIN with EPS_DECAY
