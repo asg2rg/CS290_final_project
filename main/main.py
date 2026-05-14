@@ -97,9 +97,9 @@ def main():
         print("Eval mode set")
     if args.simple:
         configs.SIMPLE_MODEL = True
-        save_path = "flat_" + save_path
-        step_log_path = "flat_" + step_log_path
-        eps_log_path = "flat_" + eps_log_path
+        save_path = "simple_" + save_path
+        step_log_path = "simple_" + step_log_path
+        eps_log_path = "simple_" + eps_log_path
         print("Using simple actor and critic models with fewer parameters.")
     print("##############################################")
     
