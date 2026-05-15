@@ -155,6 +155,7 @@ def main():
 
     step = 0
     episode_cnt = 0
+    last_save_rwd = 0.0
     try:
         early_stop_rwds = np.zeros(100)
         while step < (G_STEPS):
@@ -210,11 +211,12 @@ def main():
                     eps_writer.writerow([episode_cnt, step, episode_reward, eps_disc_reward, ep_step, dist_traveled])
             episode_cnt += 1
             eps_since_last_save += 1
-            if ep_step == env.max_episode_steps:
+            if ep_step == env.max_episode_steps and episode_reward > last_save_rwd:
                 if eps_since_last_save >= 30:
                     agent.save_checkpoint(save_path)
                     print(f"Checkpoint saved to {save_path}.")
                     eps_since_last_save = 0
+                    last_save_rwd = episode_reward
             
             # early stop if past 100 episodes rewards average to over 1750
             # early_stop_rwds[episode_cnt % 100] = episode_reward
