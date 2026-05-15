@@ -78,15 +78,27 @@ def main():
     if args.cpu:
         configs.CPU_ONLY = True
         print("Forcing training on CPU.")
+    else:
+        configs.CPU_ONLY = False
+        print("Using GPU if available.")
+
     if args.simple_rwd:
         configs.SIMPLE_REWARD = True
         print("Using simplified reward with discrete components for yaw and speed control")
+    else:
+        configs.SIMPLE_REWARD = False
+        print("Using default reward function.")
+
     if args.norm:
         configs.NORM = True
         save_path = "norm_" + save_path
         step_log_path = "norm_" + step_log_path
         eps_log_path = "norm_" + eps_log_path
-        print("Normalizing observations and actions for the networks. This is recommended for stable training.")
+        print("Normalizing observations and actions for the networks.")
+    else:
+        configs.NORM = False
+        print("Not normalizing observations and actions.")
+
     if not args.unclamp:
         configs.CLAMP = True
         save_path = "clamped_" + save_path
@@ -96,26 +108,34 @@ def main():
     else:
         configs.CLAMP = False
         print("Not clamping outputs: actions can exceed max values, penalized by env.")
+
     if args.discrete:
         configs.DISCRETE = True
         print("Using discrete action space.")
     assert not (configs.DISCRETE and configs.CLAMP), "Cannot both clamp and use discrete spaces."
+    
     if args.exp_name != "":
         save_path = args.exp_name + "_" + save_path
         step_log_path = args.exp_name + "_" + step_log_path
         eps_log_path = args.exp_name + "_" + eps_log_path
+    
     if args.eval:
         configs.EVAL = True
         print("Eval mode set")
+    
     if args.b != 1024:
         configs.BATCH_SIZE = args.b
         print(f"Batch size set to {configs.BATCH_SIZE}")
+    
     if args.simple:
         configs.SIMPLE_MODEL = True
         save_path = "simple_" + save_path
         step_log_path = "simple_" + step_log_path
         eps_log_path = "simple_" + eps_log_path
         print("Using simple actor and critic models with fewer parameters.")
+    else:
+        print("Using default TD3 actor and critic models.")
+        configs.SIMPLE_MODEL = False
     
     print(f"\nFiles will be saved to:\n\tCheckpoint: {save_path}\n\tStep log: {step_log_path}\n\tEpisode log: {eps_log_path}")
     print("##############################################")
