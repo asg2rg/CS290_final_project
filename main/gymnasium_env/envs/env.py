@@ -378,6 +378,7 @@ class CarAndTargetEnv(gym.Env):
     
     def reward_simple(self, turn_cmd, acc_cmd):
         reward = -0.1
+        speed_diff = abs(self.car_speed - configs.TARGET_SPEED)
         # legal actions
         if self.collision_check():
             reward -= 7.0
@@ -396,28 +397,38 @@ class CarAndTargetEnv(gym.Env):
         # lane
         lane = self.y_to_road_id(self.car[1])
         if lane == configs.TARGET_LANE:
-            reward += 2.0
+            if self.car_speed > 15.0:
+                reward += 2.0
         elif (configs.TARGET_LANE in [2, 3] and lane in [2, 3]) or (configs.TARGET_LANE in [0, 1] and lane in [0, 1]):
-            reward += 0.5
+            if self.car_speed > 15.0:
+                reward += 0.5
         else:
             reward -= 1.0
         # centering
         dist_to_lane_center = abs(self.car[1] - self.road_center_y(lane)) # range 0~40
-        reward += max(0.3-((dist_to_lane_center**2 / 10) * 0.005), -0.3)
+        lane_rwd = max(0.3-((dist_to_lane_center**2 / 10) * 0.005), -0.3)
+        if lane_rwd > 0:
+            if self.car_speed > 15.0:
+                reward += lane_rwd
+        else:
+            reward += lane_rwd
         # speed
-        speed_diff = abs(self.car_speed - configs.TARGET_SPEED)
-        if speed_diff < 5.0:
-            reward += 2.0
-        elif speed_diff < 10.0:
-            reward += 1.0
-        elif speed_diff > 20.0:
+        if speed_diff > 20.0:
             reward -= 0.5
+        else:
+            spd_rwd = max(2.0 - (speed_diff * 0.1), 0.0)
+            reward += spd_rwd
         # forward
         dist_rwd = self.car[0] - self.last_x
         reward += min(dist_rwd * 0.01, 0.1)
         # yaw
         yaw = np.degrees(abs(self.car[2]))
-        reward += max(0.3 - (yaw * 0.05), -1.0)
+        yaw_rwd = max(0.3 - (yaw * 0.05), -1.0)
+        if yaw_rwd > 0:
+            if self.car_speed > 15.0:
+                reward += yaw_rwd
+        else:
+            reward += yaw_rwd
         if yaw > 45.0:
             reward -= 1.0
         return reward
