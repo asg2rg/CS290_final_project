@@ -68,7 +68,8 @@ def main():
     parser.add_argument('--simple-rwd', action='store_true', default=False, help='Use simplified reward function reward')
     parser.add_argument('--cpu', action='store_true', default=False, help='Force training on CPU even if GPU is available')
     parser.add_argument('--b', type=int, default=1024, help='Batch size for training (default: 1024)')
-    parser.add_argument('--simple', action='store_true', default=False, help='Use simple actor and critic models with fewer parameters')
+    # parser.add_argument('--simple', action='store_true', default=False, help='Use simple actor and critic models with fewer parameters')
+    parser.add_argument('--model', type=str, default="", help='Model type to use: "simple" for simple actor and critic, "old" for old versions, default is the new TD3 models')
     parser.add_argument('--norm', action='store_true', default=False, help='Normalize observations and actions for the networks')
     args = parser.parse_args()
     
@@ -127,15 +128,15 @@ def main():
         configs.BATCH_SIZE = args.b
         print(f"Batch size set to {configs.BATCH_SIZE}")
     
-    if args.simple:
-        configs.SIMPLE_MODEL = True
-        save_path = "simple_" + save_path
-        step_log_path = "simple_" + step_log_path
-        eps_log_path = "simple_" + eps_log_path
+    if args.model != "":
+        configs.MODEL_TYPE = args.model
+        save_path = args.model + "_" + save_path
+        step_log_path = args.model + "_" + step_log_path
+        eps_log_path = args.model + "_" + eps_log_path
         print("Using simple actor and critic models with fewer parameters.")
     else:
         print("Using default TD3 actor and critic models.")
-        configs.SIMPLE_MODEL = False
+        configs.MODEL_TYPE = "default"
     
     print(f"\nFiles will be saved to:\n\tCheckpoint: {save_path}\n\tStep log: {step_log_path}\n\tEpisode log: {eps_log_path}")
     print("##############################################")

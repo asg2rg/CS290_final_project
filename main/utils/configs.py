@@ -83,7 +83,7 @@ DISCOUNT = 0.97
 BATCH_SIZE = 1024
 
 CAPACITY = 800_000
-SIMPLE_MODEL = False
+MODEL_TYPE = "default" # simple, default, old
 
 NORM = False
 

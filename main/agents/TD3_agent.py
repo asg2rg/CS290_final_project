@@ -6,12 +6,18 @@ from utils.configs import G_STEPS
 
 class TD3Agent:
     def __init__(self, state_dim = configs.OBS_ELEMENTS_PER_TIMESTEP, action_dim = 2, actor_lr=1e-4, critic_lr=3e-4):
-        if configs.SIMPLE_MODEL:
+        if configs.MODEL_TYPE == "simple":
             from agents.simple_actor import Actor
             from agents.simple_critic import Critic
+            print("Using simple actor and critic models with fewer parameters.")
+        elif configs.MODEL_TYPE == "old":
+            from agents.old_actor import Actor
+            from agents.old_critic import Critic
+            print("Using old actor and critic models.")
         else:
             from agents.actor import Actor
             from agents.critic import Critic
+            print("Using default complex TD3 actor and critic models.")
         self.stack_sz = configs.STACK_SZ
         self.state_dim = state_dim
         self.act_dim = action_dim
