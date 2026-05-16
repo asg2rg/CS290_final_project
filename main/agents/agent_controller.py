@@ -25,14 +25,20 @@ class AgentController:
 
     def make_decision(self, obs):
         self.steps += 1
+
+        # Ensure scalar-friendly indexing even if obs arrives as (1, N) tensor/array.
+        if isinstance(obs, torch.Tensor):
+            obs = obs.detach().cpu().numpy()
+        obs = np.asarray(obs, dtype=np.float32).reshape(-1)
+
         agent_lane = int(obs[0])
-        agent_speed = obs[1]
-        agent_heading = obs[2]
+        agent_speed = float(obs[1])
+        agent_heading = float(obs[2])
         car_lane = int(obs[3])
-        car_speed = obs[4]
-        car_yaw = obs[5]
-        dx = obs[6]
-        dy = obs[7]
+        car_speed = float(obs[4])
+        car_yaw = float(obs[5])
+        dx = float(obs[6])
+        dy = float(obs[7])
         lane_error = obs[8:12]
         target_lane_error = None
 
@@ -69,10 +75,18 @@ class AgentController:
                         self.target_lane = 3
                     elif agent_lane == 3:
                         self.target_lane = 2
+                    elif agent_lane == -1:
+                        self.lane_change_active = False
             # move to the chosen lane
             if self.lane_change_active:
                 # print(f"Changing lane from {agent_lane} to {self.target_lane}")
-                target_lane_error = lane_error[self.target_lane]
+                try:
+                    target_lane_error = float(lane_error[self.target_lane])
+                except Exception as e:
+                    print(f"shape of lane_error: {lane_error.shape}, target_lane: {self.target_lane}")
+                    print(f"Lane error array: {lane_error}")
+                    raise e
+                    
 
                 lane_tolerance = 5.0
                 heading_tolerance = 0.03
@@ -99,7 +113,7 @@ class AgentController:
 
                 if (agent_lane == self.target_lane and abs(target_lane_error) < lane_tolerance and abs(agent_heading) < heading_tolerance):
                     self.lane_change_active = False
-                    self.target_lane = None
+                    self.target_lane = self.target_lane
                     self.just_finished_lane_change = True
 
                 return turn_cmd, acc_cmd
@@ -122,8 +136,8 @@ class AgentController:
                         if irrational_probs < 0.1:
                             self.target_speed = configs.TARGET_SPEED - 20.0 # slow down even if behind
                             # print(f"Irrational slow down for agent {self.id}")
-                        else:
-                            self.target_speed = configs.TARGET_SPEED + 10.0
+                        # else:
+                        #     self.target_speed = configs.TARGET_SPEED + 10.0
                             # print(f"Chasing speed up for agent {self.id}")
                     self.speed_change_active = True
                     self.target_speed = np.clip(self.target_speed, configs.MIN_SPEED, configs.MAX_SPEED)

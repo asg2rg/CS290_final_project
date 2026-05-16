@@ -3,7 +3,7 @@ import numpy as np
 import utils.configs as configs
 
 # obs order: 
-# target lane, target speed, agents front, agents behind, (car lane, car speed, car yaw)*4, (exists, lane, speed, yaw, rel_dist, heading_error)*4, (angular, linear)*3
+# target speed, target lane, agents front, agents behind, (car lane, car speed, car yaw)*4, (exists, lane, speed, yaw, rel_dist, heading_error)*4, (angular, linear)*3
 # range:
 # 0~3, 0~100 0~5, 0~5, (-1~3, 0~100, -np.pi~np.pi)*4, (0~1, -1~3, 0~100, -np.pi~np.pi, -500~500, -np.pi~np.pi)*4, (-3~3, -10~10)*3
 

@@ -24,32 +24,49 @@ def eval_loop(env, agent, prefix):
     # ckpt = ckpt_dir + "/" + ckpt
     eval_log_path = logs_dir + "/" + eval_log_path
     agent.load_checkpoint(ckpt)
-    for ep in range(500): # run 500 evaluation episodes
+    for ep in range(300): # run 300 evaluation episodes
         obs, info = env.reset()
         agent.init_hists()
         agent._add_obs_history(obs)
         episode_reward = 0.0
         done = False
+
         ep_step = 0
+        steps_in_tgt_lane = 0
+        diff_tgt_speed = 0.0
+        speed_diff = 0.0
+        speed_deviation_steps = 0
 
         while not done:
             obs_t = agent.parse_obs()
             action = agent.make_decision(obs_t, step=0) # no exploration noise during eval
             next_obs, reward, terminated, truncated, info = env.step(action)
+            # get lane and speed from next_obs for reward analysis
+            car_lane = info["car_road"]
+            if car_lane == configs.TARGET_LANE:
+                steps_in_tgt_lane += 1
+            car_speed = info["car_speed"]
+            speed_diff = abs(car_speed - configs.TARGET_SPEED)
+            if speed_diff > 10.0:
+                speed_deviation_steps += 1
+            diff_tgt_speed += speed_diff
             done = terminated or truncated
             agent.update_hists(next_obs, action)
 
             episode_reward += reward
             ep_step += 1
 
-        print(f"Eval episode reward: {episode_reward}, steps: {ep_step}, distance traveled: {info['car_x'] - 100}")
+        if ep < 50:
+            continue # skip first 50 for warmup
+        
+        travel_dist = info['car_x'] - 100
+        print(f"Eval episode reward: {episode_reward}, steps: {ep_step}, distance traveled: {travel_dist}")
         # add reward, steps, distance to eval log
         with open(eval_log_path, mode='a', newline='') as eval_log_file:
             eval_writer = csv.writer(eval_log_file)
             if eval_log_file.tell() == 0: # write header if file is new
-                eval_writer.writerow(['episode', 'reward', 'steps', 'distance_traveled'])
-            eval_writer.writerow([ep, episode_reward, ep_step, info['car_x'] - 100])
-
+                eval_writer.writerow(['episode', 'reward', 'steps', 'distance_traveled', 'steps_in_target_lane', 'avg_speed_diff', 'speed_deviation_ratio', 'fail_mode'])
+            eval_writer.writerow([ep, episode_reward, ep_step, travel_dist, steps_in_tgt_lane, diff_tgt_speed / ep_step, speed_deviation_steps / ep_step, int(terminated)])
 
 def main():
     save_path = "td3_checkpoint.pth"
@@ -141,7 +158,7 @@ def main():
     print(f"\nFiles will be saved to:\n\tCheckpoint: {save_path}\n\tStep log: {step_log_path}\n\tEpisode log: {eps_log_path}")
     print("##############################################")
     
-    env = CarAndTargetEnv(render_mode="human" if configs.RENDER else None, max_episode_steps=500)
+    env = CarAndTargetEnv(render_mode="human" if configs.RENDER else None, max_episode_steps=500 if not configs.EVAL else 150)
     agent = None
     if not configs.DISCRETE:
         agent = TD3Agent()

@@ -1,0 +1,10 @@
+simple_clamped:
+avg steps: 139.2720 ; avg steps in lane: 110.5680 ; avg speed dev: 0.7923 ; avg steps speed dev: 0.0000 ; success: 46.00% / col: 53.60% / oob: 0.40%
+simple_unclamped:
+avg steps: 109.3360 ; avg steps in lane: 54.8760 ; avg speed dev: 0.6305 ; avg steps speed dev: 0.0000 ; success: 24.40% / col: 75.60% / oob: 0.00%
+temporal_clamped:
+avg steps: 121.4760 ; avg steps in lane: 114.8120 ; avg speed dev: 2.0623 ; avg steps speed dev: 0.0278 ; success: 34.40% / col: 65.60% / oob: 0.00%
+temporal_unclamped:
+avg steps: 90.2960 ; avg steps in lane: 72.0520 ; avg speed dev: 14.1714 ; avg steps speed dev: 0.5788 ; success: 35.60% / col: 63.60% / oob: 0.80%
+base_clamped:
+avg steps: 110.8480 ; avg steps in lane: 89.0351 ; avg speed dev: 13.5588 ; avg steps speed dev: 0.2855 ; success: 52.80% / col: 46.00% / oob: 1.20%

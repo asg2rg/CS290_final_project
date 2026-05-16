@@ -105,10 +105,31 @@ class TD3Agent:
         # obs: lane, speed, yaw, [exists, lane, speed, yaw, dist, rel_heading]
         self._add_obs_history(obs)
         self._add_act_history(action)
+    
+    def strategy_lane(self):
+        # if agent in lane and ahead (dx > 0), change lane (2->3, 3->2)
+        curr_state = self.car_history[-1]
+        agent_state = self.agent_history[-1]
+        car_lane = int(curr_state[0])
+        agent_lanes = agent_state[1::6]
+        agent_dists = agent_state[4::6]
+        agent_rel_headings = agent_state[5::6]
+        # in front if rel_heading in [-pi/2, pi/2] and dist > 0
+        agents_ahead = (agent_rel_headings > -np.pi/2) & (agent_rel_headings < np.pi/2) & (agent_dists > 0)
+        # agents in same lane and ahead
+        agents_same_lane_ahead = agents_ahead & (agent_lanes == car_lane)
+        if np.any(agents_same_lane_ahead):
+            if car_lane == 2:
+                return 3
+            elif car_lane == 3:
+                return 2
+        return configs.TARGET_LANE
+
 
     def build_replay_frame(self):
         agent_fl = [agent_hist.flatten() for agent_hist in self.agent_history]
         parts = [np.array([configs.TARGET_SPEED, configs.TARGET_LANE, configs.AGENTS_FRONT, configs.AGENTS_BEHIND], dtype=np.float32)] + self.car_history + agent_fl + self.act_history
+        # parts = [np.array([configs.TARGET_SPEED, self.strategy_lane(), configs.AGENTS_FRONT, configs.AGENTS_BEHIND], dtype=np.float32)] + self.car_history + agent_fl + self.act_history
         obs_np = np.concatenate(parts, axis=0)
         return obs_np
 
@@ -118,7 +139,7 @@ class TD3Agent:
         # print(f"Agent history: {self.agent_history}")
         # print(f"Flattened agent history: {agent_fl}")
         parts = [np.array([configs.TARGET_SPEED, configs.TARGET_LANE, configs.AGENTS_FRONT, configs.AGENTS_BEHIND], dtype=np.float32)] + self.car_history + agent_fl + self.act_history
-        
+        # parts = [np.array([configs.TARGET_SPEED, self.strategy_lane(), configs.AGENTS_FRONT, configs.AGENTS_BEHIND], dtype=np.float32)] + self.car_history + agent_fl + self.act_history
         obs_np = np.concatenate(parts, axis=0)
         obs_t = torch.FloatTensor(obs_np).unsqueeze(0).to(self.device)
 

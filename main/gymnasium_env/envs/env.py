@@ -238,6 +238,7 @@ class CarAndTargetEnv(gym.Env):
     def _get_info(self):
         info = {
             "car_x": self.car[0],
+            "car_speed": self.car_speed,
             "car_road": self.y_to_road_id(self.car[1]),
             "agent_count": len(self.active_agents),
             "agents_front": configs.AGENTS_FRONT,
@@ -540,11 +541,11 @@ class CarAndTargetEnv(gym.Env):
             # terminate if collision
             if self.collision_check():
                 # print("Terminating for collision")
-                return True
+                return 1
             # terminate if OOB
             if self.boundary_check():
                 # print("Terminating for OOB")
-                return True
+                return 2
         return False
     
     def collision_check(self):
